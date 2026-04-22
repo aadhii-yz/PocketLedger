@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 
+	"github.com/aadhii-yz/PocketLedger/backend/collections"
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
 )
@@ -11,10 +12,9 @@ func main() {
 	app := pocketbase.New()
 
 	app.OnServe().BindFunc(func(se *core.ServeEvent) error {
-		// registers new "GET /hello" route
-		se.Router.GET("/hello", func(re *core.RequestEvent) error {
-			return re.String(200, "Hello world!")
-		})
+		if err := collections.CreateCollections(app); err != nil {
+			return err
+		}
 
 		return se.Next()
 	})
