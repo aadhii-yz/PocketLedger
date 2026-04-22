@@ -4,12 +4,28 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/aadhii-yz/PocketLedger/backend/services"
 	"github.com/pocketbase/pocketbase/core"
 )
 
 func GetBarcode(app core.App) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
-		return nil
+		product, err := app.FindRecordById("products", e.Request.PathValue("productId"))
+		if err != nil {
+			return e.JSON(http.StatusNotFound, map[string]string{"message": "product not found"})
+		}
+		barcode := product.GetString("barcode")
+		if barcode == "" {
+			return e.JSON(http.StatusNotFound, map[string]string{"message": "no barcode assigned"})
+		}
+		png, err := services.GenerateBarcodePNG(barcode)
+		if err != nil {
+			return e.JSON(http.StatusInternalServerError, map[string]string{"message": err.Error()})
+		}
+		e.Response.Header().Set("Content-Type", "image/png")
+		e.Response.WriteHeader(http.StatusOK)
+		_, err = e.Response.Write(png)
+		return err
 	}
 }
 func GenerateBarcode(app core.App) func(*core.RequestEvent) error {
