@@ -2,12 +2,23 @@ package collections
 
 import (
 	"github.com/pocketbase/pocketbase/core"
-	"github.com/pocketbase/pocketbase/tools/types"
 )
 
 func CreateCollections(app core.App) error {
-	err := ensureUsersExtended(app)
-	return err
+	for _, fn := range []func(core.App) error{
+		ensureUsersExtended,
+		ensureCategories,
+		ensureProducts,
+		ensureStock,
+		ensureStockMovements,
+		ensureBills,
+		ensureBillItems,
+	} {
+		if err := fn(app); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func ensureUsersExtended(app core.App) error {
@@ -34,11 +45,11 @@ func ensureCategories(app core.App) error {
 		return nil
 	}
 	col := core.NewBaseCollection("categories")
-	col.ListRule = types.Pointer("@request.auth.id != ''")
-	col.ViewRule = types.Pointer("@request.auth.id != ''")
-	col.CreateRule = types.Pointer("@request.auth.role = 'admin' || @request.auth.role = 'manager'")
-	col.UpdateRule = types.Pointer("@request.auth.role = 'admin' || @request.auth.role = 'manager'")
-	col.DeleteRule = types.Pointer("@request.auth.role = 'admin'")
+	col.ListRule = new("@request.auth.id != ''")
+	col.ViewRule = new("@request.auth.id != ''")
+	col.CreateRule = new("@request.auth.role = 'admin' || @request.auth.role = 'manager'")
+	col.UpdateRule = new("@request.auth.role = 'admin' || @request.auth.role = 'manager'")
+	col.DeleteRule = new("@request.auth.role = 'admin'")
 	col.Fields.Add(&core.TextField{Name: "name", Required: true})
 	col.Fields.Add(&core.TextField{Name: "description"})
 	return app.Save(col)
@@ -50,11 +61,11 @@ func ensureProducts(app core.App) error {
 	}
 	editRole := "@request.auth.role = 'admin' || @request.auth.role = 'manager' || @request.auth.role = 'stock_entry'"
 	col := core.NewBaseCollection("products")
-	col.ListRule = types.Pointer("@request.auth.id != ''")
-	col.ViewRule = types.Pointer("@request.auth.id != ''")
-	col.CreateRule = types.Pointer(editRole)
-	col.UpdateRule = types.Pointer(editRole)
-	col.DeleteRule = types.Pointer("@request.auth.role = 'admin' || @request.auth.role = 'manager'")
+	col.ListRule = new("@request.auth.id != ''")
+	col.ViewRule = new("@request.auth.id != ''")
+	col.CreateRule = new(editRole)
+	col.UpdateRule = new(editRole)
+	col.DeleteRule = new("@request.auth.role = 'admin' || @request.auth.role = 'manager'")
 
 	categoriesCol, _ := app.FindCollectionByNameOrId("categories")
 	var categoryColId string
@@ -99,11 +110,11 @@ func ensureStock(app core.App) error {
 	}
 
 	col := core.NewBaseCollection("stock")
-	col.ListRule = types.Pointer("@request.auth.id != ''")
-	col.ViewRule = types.Pointer("@request.auth.id != ''")
-	col.CreateRule = types.Pointer(editRole)
-	col.UpdateRule = types.Pointer(editRole)
-	col.DeleteRule = types.Pointer("@request.auth.role = 'admin'")
+	col.ListRule = new("@request.auth.id != ''")
+	col.ViewRule = new("@request.auth.id != ''")
+	col.CreateRule = new(editRole)
+	col.UpdateRule = new(editRole)
+	col.DeleteRule = new("@request.auth.role = 'admin'")
 	col.Fields.Add(&core.RelationField{
 		Name:         "product",
 		Required:     true,
@@ -128,11 +139,11 @@ func ensureStockMovements(app core.App) error {
 	}
 
 	col := core.NewBaseCollection("stock_movements")
-	col.ListRule = types.Pointer(viewRole)
-	col.ViewRule = types.Pointer(viewRole)
-	col.CreateRule = types.Pointer("@request.auth.id != ''")
-	col.UpdateRule = types.Pointer("@request.auth.role = 'admin'")
-	col.DeleteRule = types.Pointer("@request.auth.role = 'admin'")
+	col.ListRule = new(viewRole)
+	col.ViewRule = new(viewRole)
+	col.CreateRule = new("@request.auth.id != ''")
+	col.UpdateRule = new("@request.auth.role = 'admin'")
+	col.DeleteRule = new("@request.auth.role = 'admin'")
 	col.Fields.Add(&core.RelationField{
 		Name:         "product",
 		Required:     true,
@@ -164,11 +175,11 @@ func ensureBills(app core.App) error {
 	}
 
 	col := core.NewBaseCollection("bills")
-	col.ListRule = types.Pointer(viewRule)
-	col.ViewRule = types.Pointer(viewRule)
-	col.CreateRule = types.Pointer("@request.auth.id != ''")
-	col.UpdateRule = types.Pointer("@request.auth.role = 'admin' || @request.auth.role = 'manager'")
-	col.DeleteRule = types.Pointer("@request.auth.role = 'admin'")
+	col.ListRule = new(viewRule)
+	col.ViewRule = new(viewRule)
+	col.CreateRule = new("@request.auth.id != ''")
+	col.UpdateRule = new("@request.auth.role = 'admin' || @request.auth.role = 'manager'")
+	col.DeleteRule = new("@request.auth.role = 'admin'")
 	col.Fields.Add(&core.TextField{Name: "bill_number", Required: true})
 	col.Fields.Add(&core.TextField{Name: "customer_name"})
 	col.Fields.Add(&core.TextField{Name: "customer_phone"})
@@ -213,11 +224,11 @@ func ensureBillItems(app core.App) error {
 	}
 
 	col := core.NewBaseCollection("bill_items")
-	col.ListRule = types.Pointer("@request.auth.id != ''")
-	col.ViewRule = types.Pointer("@request.auth.id != ''")
-	col.CreateRule = types.Pointer("@request.auth.id != ''")
-	col.UpdateRule = types.Pointer("@request.auth.role = 'admin'")
-	col.DeleteRule = types.Pointer("@request.auth.role = 'admin'")
+	col.ListRule = new("@request.auth.id != ''")
+	col.ViewRule = new("@request.auth.id != ''")
+	col.CreateRule = new("@request.auth.id != ''")
+	col.UpdateRule = new("@request.auth.role = 'admin'")
+	col.DeleteRule = new("@request.auth.role = 'admin'")
 	col.Fields.Add(&core.RelationField{
 		Name:         "bill",
 		Required:     true,
