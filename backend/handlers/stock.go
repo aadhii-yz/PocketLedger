@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/aadhii-yz/PocketLedger/backend/services"
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 )
@@ -94,6 +95,10 @@ func AdjustStock(app core.App) func(*core.RequestEvent) error {
 // StockAlerts returns products at or below their low_stock_threshold.
 func StockAlerts(app core.App) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
-		return nil
+		items, err := services.GetLowStock(app)
+		if err != nil {
+			return e.JSON(http.StatusInternalServerError, map[string]string{"message": err.Error()})
+		}
+		return e.JSON(http.StatusOK, items)
 	}
 }
