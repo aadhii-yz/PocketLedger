@@ -145,6 +145,19 @@ func CreateBill(app core.App) func(*core.RequestEvent) error {
 					return err
 				}
 			}
+
+			// Write system log for bill creation
+			if logsCol, lerr := txApp.FindCollectionByNameOrId("system_logs"); lerr == nil {
+				logRec := core.NewRecord(logsCol)
+				logRec.Set("level", "INFO")
+				logRec.Set("message", fmt.Sprintf("POST /api/custom/bills/create — %s via %s", billNumber, req.PaymentMethod))
+				logRec.Set("status_code", 201)
+				logRec.Set("details", fmt.Sprintf("Grand Total: %.2f | Customer: %s | Status: %s", grandTotal, req.CustomerName, req.PaymentStatus))
+				logRec.Set("source", "billing")
+				logRec.Set("user_id", e.Auth.Id)
+				_ = txApp.Save(logRec)
+			}
+
 			return nil
 		})
 

@@ -42,6 +42,12 @@ func main() {
 		g.GET("/stats/dashboard", handlers.Dashboard(app)).
 			BindFunc(middleware.RequireRole("admin", "manager"))
 
+		// System Logs
+		g.POST("/logs", handlers.CreateLog(app)).
+			BindFunc(middleware.RequireRole("admin", "manager", "pos", "stock_entry"))
+		g.GET("/logs", handlers.GetLogs(app)).
+			BindFunc(middleware.RequireRole("admin"))
+
 		return se.Next()
 	})
 

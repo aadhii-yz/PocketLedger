@@ -65,7 +65,23 @@ func AdjustStock(app core.App) func(*core.RequestEvent) error {
 			mv.Set("type", req.Type)
 			mv.Set("quantity", req.Quantity)
 			mv.Set("note", req.Note)
-			return txApp.Save(mv)
+			if err := txApp.Save(mv); err != nil {
+				return err
+			}
+
+			// Write system log for stock adjustment
+			if logsCol, lerr := txApp.FindCollectionByNameOrId("system_logs"); lerr == nil {
+				logRec := core.NewRecord(logsCol)
+				logRec.Set("level", "INFO")
+				logRec.Set("message", fmt.Sprintf("POST /api/custom/stock/adjust — %s | product: %s", req.Type, req.ProductID))
+				logRec.Set("status_code", 200)
+				logRec.Set("details", fmt.Sprintf("Quantity: %.2f | Note: %s", req.Quantity, req.Note))
+				logRec.Set("source", "stock")
+				logRec.Set("user_id", e.Auth.Id)
+				_ = txApp.Save(logRec)
+			}
+
+			return nil
 		})
 
 		if err != nil {

@@ -13,6 +13,7 @@ func CreateCollections(app core.App) error {
 		ensureStockMovements,
 		ensureBills,
 		ensureBillItems,
+		ensureSystemLogs,
 	} {
 		if err := fn(app); err != nil {
 			return err
@@ -37,6 +38,13 @@ func ensureUsersExtended(app core.App) error {
 		MaxSelect: 1,
 		Values:    []string{"admin", "manager", "pos", "stock_entry"},
 	})
+
+	// Allow any authenticated user to list/view users (needed for manager add-user flow).
+	// Create/Update/Delete remain admin-only via PocketBase default auth collection rules.
+	listRule := "@request.auth.id = 'admin' || @request.auth.id = 'manager'"
+	col.ListRule = &listRule
+	col.ViewRule = &listRule
+
 	return app.Save(col)
 }
 
@@ -47,7 +55,7 @@ func ensureCategories(app core.App) error {
 	col := core.NewBaseCollection("categories")
 	col.ListRule = new("@request.auth.id != ''")
 	col.ViewRule = new("@request.auth.id != ''")
-	col.CreateRule = new("@request.auth.role = 'admin' || @request.auth.role = 'manager'")
+	col.CreateRule = new("@request.auth.role = 'admin' || @request.auth.role = 'manager' || @request.auth.role = 'stock_entry'")
 	col.UpdateRule = new("@request.auth.role = 'admin' || @request.auth.role = 'manager'")
 	col.DeleteRule = new("@request.auth.role = 'admin'")
 	col.Fields.Add(&core.TextField{Name: "name", Required: true})
@@ -245,5 +253,34 @@ func ensureBillItems(app core.App) error {
 	col.Fields.Add(&core.NumberField{Name: "unit_price", Required: true})
 	col.Fields.Add(&core.NumberField{Name: "tax_rate"})
 	col.Fields.Add(&core.NumberField{Name: "line_total", Required: true})
+	return app.Save(col)
+}
+
+func ensureSystemLogs(app core.App) error {
+	if _, err := app.FindCollectionByNameOrId("system_logs"); err == nil {
+		return nil
+	}
+	col := core.NewBaseCollection("system_logs")
+	col.ListRule = new("@request.auth.role = 'admin'")
+	col.ViewRule = new("@request.auth.role = 'admin'")
+	col.CreateRule = new("@request.auth.id != ''")
+	col.UpdateRule = nil
+	col.DeleteRule = new("@request.auth.role = 'admin'")
+
+	col.Fields.Add(&core.SelectField{
+		Name:      "level",
+		Required:  true,
+		MaxSelect: 1,
+		Values:    []string{"INFO", "WARNING", "ERROR"},
+	})
+	col.Fields.Add(&core.TextField{Name: "message", Required: true})
+	col.Fields.Add(&core.NumberField{Name: "status_code"})
+	col.Fields.Add(&core.TextField{Name: "details"})
+	col.Fields.Add(&core.SelectField{
+		Name:      "source",
+		MaxSelect: 1,
+		Values:    []string{"billing", "stock", "auth", "system"},
+	})
+	col.Fields.Add(&core.TextField{Name: "user_id"})
 	return app.Save(col)
 }
