@@ -1,10 +1,11 @@
 # PocketLedger
 
-This is a minimal yet powerful web-based *Inventory* and *Billing* system.
+This is a minimal yet powerful web-based **Inventory** and **Billing** system.
 
 > [!CAUTION]
-> Currently not completed *WIP*
+> Currently under development
 
 This project uses
+
 - Go with [PocketBase](https://pocketbase.io/) for backend
 - [Svelte](https://svelte.dev/) for frontend.
