@@ -1,0 +1,417 @@
+<script lang="ts">
+  import ImprovedSidebar from '$lib/components/ImprovedSidebar.svelte';
+  import FluidLayout from '$lib/components/FluidLayout.svelte';
+  import Card from '$lib/components/Card.svelte';
+  import Button from '$lib/components/Button.svelte';
+  import { Receipt, Barcode, Plus, Minus, Trash2, CreditCard, Smartphone, Banknote, Printer, Search, AlertCircle, ChevronDown, X } from 'lucide-svelte';
+  import { pb, customFetch } from '$lib/pb';
+  import { onMount } from 'svelte';
+  import { slide, fade } from 'svelte/transition';
+
+  const menuItems = [
+    { label: 'Billing', icon: Receipt, path: '/billing' },
+  ];
+
+  interface Product {
+    id: string;
+    name: string;
+    category: string;
+    price: number;
+    costPrice: number;
+    taxRate: number;
+    quantity: number;
+    barcode: string;
+    sku: string;
+  }
+
+  interface CartItem {
+    product: Product;
+    quantity: number;
+  }
+
+  let products = $state<Product[]>([]);
+  let loadingProducts = $state(true);
+  let searchTerm = $state('');
+  let cart = $state<CartItem[]>([]);
+  let paymentMethod = $state<'cash' | 'upi' | 'card'>('cash');
+  let showReceipt = $state(false);
+  let billNumber = $state('');
+  let submitting = $state(false);
+  let errorMsg = $state('');
+  let showProductPicker = $state(false);
+  let pickerCategory = $state<string>('');
+  let pickerRef = $state<HTMLElement | null>(null);
+
+  onMount(() => {
+    async function loadProducts() {
+      try {
+        const [productRecords, stockRecords] = await Promise.all([
+          pb.collection('products').getFullList({ expand: 'category' }),
+          pb.collection('stock').getFullList(),
+        ]);
+        const stockMap = new Map(stockRecords.map((s: any) => [s.product, s.quantity as number]));
+        const mapped: Product[] = productRecords.map((p: any) => ({
+          id: p.id,
+          name: p.name,
+          sku: p.sku || '',
+          barcode: p.barcode || '',
+          category: p.expand?.category?.name || 'Uncategorized',
+          price: p.selling_price || 0,
+          costPrice: p.cost_price || 0,
+          taxRate: p.tax_rate || 0,
+          quantity: stockMap.get(p.id) || 0,
+        }));
+        products = mapped;
+      } catch (e) {
+        console.error('Failed to load products', e);
+      } finally {
+        loadingProducts = false;
+      }
+    }
+    loadProducts();
+  });
+
+  function handleOutsideClick(e: MouseEvent) {
+    if (showProductPicker && pickerRef && !pickerRef.contains(e.target as Node)) {
+      showProductPicker = false;
+    }
+  }
+
+  let categories = $derived(Array.from(new Set(products.map((p) => p.category))).sort());
+
+  let filteredProducts = $derived(products.filter(
+    (p) =>
+      p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      p.barcode.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      p.sku.toLowerCase().includes(searchTerm.toLowerCase())
+  ));
+
+  let pickerProducts = $derived(showProductPicker
+    ? (pickerCategory ? products.filter((p) => p.category === pickerCategory) : products)
+    : []);
+
+  function addToCart(product: Product) {
+    const existingItem = cart.find((item) => item.product.id === product.id);
+    if (existingItem) {
+      cart = cart.map((item) =>
+        item.product.id === product.id ? { ...item, quantity: item.quantity + 1 } : item
+      );
+    } else {
+      cart = [...cart, { product, quantity: 1 }];
+    }
+    searchTerm = '';
+    errorMsg = '';
+  }
+
+  function updateQuantity(productId: string, delta: number) {
+    cart = cart
+      .map((item) =>
+        item.product.id === productId ? { ...item, quantity: item.quantity + delta } : item
+      )
+      .filter((item) => item.quantity > 0);
+  }
+
+  function removeFromCart(productId: string) {
+    cart = cart.filter((item) => item.product.id !== productId);
+  }
+
+  let total = $derived(cart.reduce((sum, item) => {
+    const lineTotal = item.product.price * item.quantity;
+    const tax = lineTotal * (item.product.taxRate / 100);
+    return sum + lineTotal + tax;
+  }, 0));
+
+  async function handleGenerateBill() {
+    if (cart.length === 0) return;
+    submitting = true;
+    errorMsg = '';
+    try {
+      const payload = {
+        customer_name: '',
+        customer_phone: '',
+        items: cart.map((item) => ({
+          product_id: item.product.id,
+          quantity: item.quantity,
+          unit_price: item.product.price,
+          tax_rate: item.product.taxRate,
+        })),
+        discount: 0,
+        payment_method: paymentMethod,
+        payment_status: 'paid',
+        notes: '',
+      };
+      const result = await customFetch('/bills/create', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      billNumber = result.bill_number;
+      showReceipt = true;
+      products = products.map((p) => {
+        const cartItem = cart.find((c) => c.product.id === p.id);
+        return cartItem ? { ...p, quantity: p.quantity - cartItem.quantity } : p;
+      });
+      setTimeout(() => {
+        showReceipt = false;
+        cart = [];
+        paymentMethod = 'cash';
+        billNumber = '';
+      }, 4000);
+    } catch (e: any) {
+      errorMsg = e.message || 'Failed to create bill';
+    } finally {
+      submitting = false;
+    }
+  }
+
+  function setPaymentMethodMode(method: 'cash' | 'upi' | 'card') {
+    paymentMethod = method;
+  }
+</script>
+
+<svelte:window onmousedown={handleOutsideClick} />
+<svelte:head>
+  <title>Point of Sale - My Garments</title>
+</svelte:head>
+
+<div class="flex min-h-screen bg-background">
+  <ImprovedSidebar {menuItems} userRole="Billing" />
+
+  <FluidLayout maxWidth="full">
+    <div class="mb-4">
+      <h1 class="text-2xl md:text-3xl lg:text-4xl">Point of Sale</h1>
+      <p class="text-muted-foreground text-sm md:text-base">Fast and easy billing</p>
+    </div>
+
+    <!-- Search Bar + Browse Button -->
+    <Card class="mb-4">
+      <div class="flex gap-2 items-start">
+        <!-- Search input -->
+        <div class="flex-1 relative">
+          <Search class="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+          <div class="absolute right-4 top-1/2 -translate-y-1/2 cursor-pointer transition-transform hover:scale-105 active:scale-95">
+            <Barcode class="w-6 h-6 text-primary hover:text-secondary transition-colors" />
+          </div>
+          <input
+            type="text"
+            placeholder={loadingProducts ? 'Loading products…' : 'Search by product name, SKU or scan barcode…'}
+            bind:value={searchTerm}
+            disabled={loadingProducts}
+            class="w-full pl-12 pr-14 py-4 text-lg bg-input-background border-2 border-border rounded-xl outline-none focus:ring-2 focus:ring-ring focus:border-primary transition-all shadow-sm disabled:opacity-50"
+          />
+        </div>
+
+        <!-- Browse / Picker toggle -->
+        <button
+          onclick={() => { showProductPicker = !showProductPicker; pickerCategory = ''; }}
+          disabled={loadingProducts}
+          class="flex items-center gap-2 px-4 py-4 bg-primary text-primary-foreground rounded-xl font-medium whitespace-nowrap hover:opacity-90 transition-opacity disabled:opacity-50"
+        >
+          Browse <ChevronDown class="w-4 h-4 transition-transform {showProductPicker ? 'rotate-180' : ''}" />
+        </button>
+      </div>
+
+      <!-- Inline search results dropdown -->
+      {#if searchTerm && filteredProducts.length > 0}
+        <div transition:slide={{ duration: 150 }} class="mt-3 max-h-64 overflow-y-auto border border-border rounded-lg">
+          {#each filteredProducts.slice(0, 8) as product (product.id)}
+            <button
+              onclick={() => addToCart(product)}
+              disabled={product.quantity === 0}
+              class="w-full p-3 hover:bg-muted transition-colors text-left border-b border-border last:border-0 flex justify-between items-center disabled:opacity-40"
+            >
+              <div>
+                <p class="font-medium">{product.name}</p>
+                <p class="text-sm text-muted-foreground">{product.category} • {product.barcode || product.sku}</p>
+              </div>
+              <div class="text-right">
+                <p class="font-medium text-primary">₹{product.price}</p>
+                <p class="text-xs {product.quantity < 5 ? 'text-destructive' : 'text-muted-foreground'}">
+                  {product.quantity} in stock
+                </p>
+              </div>
+            </button>
+          {/each}
+        </div>
+      {/if}
+
+      {#if searchTerm && filteredProducts.length === 0 && !loadingProducts}
+        <p class="mt-3 text-sm text-muted-foreground px-2">No products found for "{searchTerm}"</p>
+      {/if}
+
+      <!-- Product Picker Panel -->
+      {#if showProductPicker}
+        <div
+          bind:this={pickerRef}
+          transition:slide={{ duration: 200 }}
+          class="mt-4 overflow-hidden"
+        >
+          <!-- Category tabs -->
+          <div class="flex gap-2 flex-wrap mb-4">
+            <button
+              onclick={() => pickerCategory = ''}
+              class="px-3 py-1.5 rounded-full text-sm font-medium transition-colors {pickerCategory === '' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80'}"
+            >
+              All
+            </button>
+            {#each categories as cat}
+              <button
+                onclick={() => pickerCategory = cat}
+                class="px-3 py-1.5 rounded-full text-sm font-medium transition-colors {pickerCategory === cat ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80'}"
+              >
+                {cat}
+              </button>
+            {/each}
+          </div>
+
+          <!-- Product grid -->
+          <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 max-h-80 overflow-y-auto pr-1">
+            {#each pickerProducts as product (product.id)}
+              {@const inCart = cart.find((c) => c.product.id === product.id)}
+              <button
+                onclick={() => addToCart(product)}
+                disabled={product.quantity === 0}
+                class="relative p-3 rounded-xl border-2 text-left transition-all disabled:opacity-40 {inCart ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50 bg-card hover:bg-muted/50'}"
+              >
+                {#if inCart}
+                  <span class="absolute top-1.5 right-1.5 w-5 h-5 bg-primary text-primary-foreground rounded-full text-xs flex items-center justify-center font-bold">
+                    {inCart.quantity}
+                  </span>
+                {/if}
+                <p class="text-sm font-medium leading-tight mb-1 pr-5">{product.name}</p>
+                <p class="text-xs text-muted-foreground mb-1">{product.category}</p>
+                <p class="text-sm font-semibold text-primary">₹{product.price}</p>
+                <p class="text-xs mt-0.5 {product.quantity < 5 ? 'text-destructive' : 'text-muted-foreground'}">
+                  {product.quantity} left
+                </p>
+              </button>
+            {/each}
+            {#if pickerProducts.length === 0}
+              <p class="col-span-full text-center py-8 text-muted-foreground text-sm">No products in this category</p>
+            {/if}
+          </div>
+
+          <div class="flex justify-end mt-3">
+            <button onclick={() => showProductPicker = false} class="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors">
+              <X class="w-4 h-4" /> Close picker
+            </button>
+          </div>
+        </div>
+      {/if}
+    </Card>
+
+    <!-- Cart -->
+    <Card class="mb-4 min-h-[400px]">
+      <h3 class="text-xl mb-4 flex items-center gap-2">
+        <Receipt class="w-6 h-6 text-primary" />
+        Cart Items ({cart.length})
+      </h3>
+
+      {#if cart.length === 0}
+        <div class="text-center py-20">
+          <Receipt class="w-20 h-20 mx-auto mb-4 opacity-20" />
+          <p class="text-xl text-muted-foreground">Cart is empty</p>
+          <p class="text-sm text-muted-foreground mt-2">Search or browse products to start billing</p>
+        </div>
+      {:else}
+        <div class="space-y-3">
+          {#each cart as item (item.product.id)}
+            <div
+              transition:slide={{ duration: 150 }}
+              class="p-4 bg-muted rounded-lg border border-border"
+            >
+              <div class="flex items-center justify-between mb-3">
+                <div class="flex-1">
+                  <p class="text-lg font-medium">{item.product.name}</p>
+                  <p class="text-sm text-muted-foreground">{item.product.category} • {item.product.barcode || item.product.sku}</p>
+                  <p class="text-primary mt-1">₹{item.product.price} each {#if item.product.taxRate > 0}<span class="text-xs text-muted-foreground">(+{item.product.taxRate}% tax)</span>{/if}</p>
+                </div>
+                <button onclick={() => removeFromCart(item.product.id)} class="text-destructive hover:bg-destructive/10 p-2 rounded transition-colors">
+                  <Trash2 class="w-5 h-5" />
+                </button>
+              </div>
+
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                  <button onclick={() => updateQuantity(item.product.id, -1)} class="w-10 h-10 bg-background border-2 border-border rounded-lg flex items-center justify-center hover:bg-primary hover:text-primary-foreground transition-colors">
+                    <Minus class="w-5 h-5" />
+                  </button>
+                  <span class="w-16 text-center text-xl font-medium">{item.quantity}</span>
+                  <button
+                    onclick={() => updateQuantity(item.product.id, 1)}
+                    disabled={item.quantity >= item.product.quantity}
+                    class="w-10 h-10 bg-background border-2 border-border rounded-lg flex items-center justify-center hover:bg-primary hover:text-primary-foreground transition-colors disabled:opacity-40"
+                  >
+                    <Plus class="w-5 h-5" />
+                  </button>
+                </div>
+                <div class="text-right">
+                  <p class="text-sm text-muted-foreground">Subtotal</p>
+                  <p class="text-2xl font-medium text-primary">₹{(item.product.price * item.quantity).toLocaleString()}</p>
+                </div>
+              </div>
+            </div>
+          {/each}
+        </div>
+      {/if}
+    </Card>
+
+    <!-- Bill Summary -->
+    <Card class="bg-gradient-to-br from-primary/5 to-secondary/5 border-2 border-primary/20">
+      <div class="space-y-4">
+        <div class="flex justify-between items-center pb-4 border-b-2 border-border">
+          <span class="text-xl font-medium">Total Amount</span>
+          <span class="text-4xl font-bold text-primary">₹{Math.round(total).toLocaleString()}</span>
+        </div>
+
+        <div>
+          <p class="text-sm font-medium mb-3 text-muted-foreground">Payment Method</p>
+          <div class="grid grid-cols-3 gap-3">
+            <button
+              onclick={() => setPaymentMethodMode('cash')}
+              class="p-4 rounded-xl border-2 transition-all {paymentMethod === 'cash' ? 'border-primary bg-primary text-primary-foreground shadow-lg' : 'border-border hover:border-primary/50 hover:shadow-md'}"
+            >
+              <Banknote class="w-8 h-8 mx-auto mb-2" />
+              <p class="font-medium">Cash</p>
+            </button>
+            <button
+              onclick={() => setPaymentMethodMode('upi')}
+              class="p-4 rounded-xl border-2 transition-all {paymentMethod === 'upi' ? 'border-primary bg-primary text-primary-foreground shadow-lg' : 'border-border hover:border-primary/50 hover:shadow-md'}"
+            >
+              <Smartphone class="w-8 h-8 mx-auto mb-2" />
+              <p class="font-medium">UPI</p>
+            </button>
+            <button
+              onclick={() => setPaymentMethodMode('card')}
+              class="p-4 rounded-xl border-2 transition-all {paymentMethod === 'card' ? 'border-primary bg-primary text-primary-foreground shadow-lg' : 'border-border hover:border-primary/50 hover:shadow-md'}"
+            >
+              <CreditCard class="w-8 h-8 mx-auto mb-2" />
+              <p class="font-medium">Card</p>
+            </button>
+          </div>
+        </div>
+
+        {#if errorMsg}
+          <div class="flex items-center gap-2 p-3 bg-destructive/10 border border-destructive/30 rounded-lg text-destructive text-sm">
+            <AlertCircle class="w-4 h-4 shrink-0" />
+            {errorMsg}
+          </div>
+        {/if}
+
+        <Button onclick={handleGenerateBill} disabled={cart.length === 0 || submitting} class="w-full py-4 text-lg font-semibold flex justify-center gap-2">
+          {#if submitting}
+            Processing…
+          {:else}
+            <Printer class="w-5 h-5" /> Generate Bill & Print
+          {/if}
+        </Button>
+
+        {#if showReceipt}
+          <div transition:fade={{ duration: 200 }} class="p-4 bg-green-50 border-2 border-green-200 rounded-xl text-center">
+            <p class="text-lg text-green-800 font-medium">Bill {billNumber} generated successfully!</p>
+            <p class="text-sm text-green-600 mt-1">Payment: {paymentMethod.toUpperCase()} · Total: ₹{Math.round(total).toLocaleString()}</p>
+          </div>
+        {/if}
+      </div>
+    </Card>
+  </FluidLayout>
+</div>
