@@ -9,3 +9,11 @@ This project uses
 
 - Go with [PocketBase](https://pocketbase.io/) for backend
 - [Svelte](https://svelte.dev/) for frontend.
+
+## How to run??
+
+```bash
+make run
+```
+
+Then open [http://localhost:8090/](http://localhost:8090/)
