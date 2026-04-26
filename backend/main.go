@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"os"
 
 	"github.com/aadhii-yz/PocketLedger/backend/collections"
 	"github.com/aadhii-yz/PocketLedger/backend/handlers"
@@ -47,6 +48,9 @@ func main() {
 			BindFunc(middleware.RequireRole("admin", "manager", "pos", "stock_entry"))
 		g.GET("/logs", handlers.GetLogs(app)).
 			BindFunc(middleware.RequireRole("admin"))
+
+		// Frontend as Static site
+		se.Router.GET("/{path...}", apis.Static(os.DirFS("./pb_public"), true))
 
 		return se.Next()
 	})
