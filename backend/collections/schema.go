@@ -39,11 +39,12 @@ func ensureUsersExtended(app core.App) error {
 		Values:    []string{"admin", "manager", "pos", "stock_entry"},
 	})
 
-	// Allow any authenticated user to list/view users (needed for manager add-user flow).
-	// Create/Update/Delete remain admin-only via PocketBase default auth collection rules.
-	listRule := "@request.auth.id = 'admin' || @request.auth.id = 'manager'"
-	col.ListRule = &listRule
-	col.ViewRule = &listRule
+	apiRule := "@request.auth.role = 'admin' || @request.auth.role = 'manager'"
+	col.ListRule = &apiRule
+	col.ViewRule = &apiRule
+	col.CreateRule = &apiRule
+	col.UpdateRule = &apiRule
+	col.DeleteRule = &apiRule
 
 	return app.Save(col)
 }
@@ -267,6 +268,10 @@ func ensureSystemLogs(app core.App) error {
 	col.UpdateRule = nil
 	col.DeleteRule = new("@request.auth.role = 'admin'")
 
+	col.Fields.Add(&core.AutodateField{
+		Name:     "created",
+		OnCreate: true,
+	})
 	col.Fields.Add(&core.SelectField{
 		Name:      "level",
 		Required:  true,
