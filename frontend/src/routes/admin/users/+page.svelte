@@ -15,7 +15,6 @@
     Edit,
     Trash2,
     Mail,
-    User,
     Shield,
     AlertCircle,
   } from "lucide-svelte";
@@ -30,7 +29,6 @@
 
   interface SystemUser {
     id: string;
-    username: string;
     email: string;
     role: "admin" | "manager" | "pos" | "stock_entry";
     fullName: string;
@@ -46,7 +44,6 @@
   let errorMsg = $state("");
 
   let formData = $state({
-    username: "",
     email: "",
     fullName: "",
     role: "pos" as SystemUser["role"],
@@ -61,7 +58,6 @@
         .getFullList({ sort: "created" });
       users = records.map((r: any) => ({
         id: r.id,
-        username: r.username || "",
         email: r.email || "",
         role: r.role || "pos",
         fullName: r.name || "",
@@ -81,7 +77,6 @@
 
   function resetForm() {
     formData = {
-      username: "",
       email: "",
       fullName: "",
       role: "pos",
@@ -99,7 +94,6 @@
     try {
       if (editingUser) {
         const data: any = {
-          username: formData.username,
           email: formData.email,
           name: formData.fullName,
           role: formData.role,
@@ -111,7 +105,6 @@
         await pb.collection("users").update(editingUser.id, data);
       } else {
         await pb.collection("users").create({
-          username: formData.username,
           email: formData.email,
           name: formData.fullName,
           role: formData.role,
@@ -131,7 +124,6 @@
   function handleEdit(user: SystemUser) {
     editingUser = user;
     formData = {
-      username: user.username,
       email: user.email,
       fullName: user.fullName,
       role: user.role,
@@ -158,7 +150,6 @@
   };
 
   const columns: any[] = [
-    { header: "Username", accessor: "username" },
     { header: "Full Name", accessor: "fullName" },
     { header: "Email", accessor: "email" },
     { header: "Role", accessor: "role" },
@@ -213,12 +204,6 @@
           <h3 class="mb-6">{editingUser ? "Edit User" : "Add New User"}</h3>
           <form onsubmit={handleSubmit} class="space-y-4">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Input label="Username" bind:value={formData.username} required>
-                {#snippet icon()}
-                  <User class="w-5 h-5" />
-                {/snippet}
-              </Input>
-
               <Input
                 label="Email"
                 type="email"
@@ -286,16 +271,7 @@
         <LoadingSpinner />
       {:else}
         {#snippet cell(row: any, column: any)}
-          {#if column.header === "Username"}
-            <div class="flex items-center gap-2">
-              <div
-                class="w-8 h-8 bg-primary/10 rounded-full flex items-center justify-center"
-              >
-                <User class="w-4 h-4 text-primary" />
-              </div>
-              <span class="font-medium">{row.username}</span>
-            </div>
-          {:else if column.header === "Email"}
+          {#if column.header === "Email"}
             <span class="text-muted-foreground font-mono text-sm"
               >{row.email}</span
             >
