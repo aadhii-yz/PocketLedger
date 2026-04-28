@@ -1,14 +1,14 @@
 <script lang="ts">
-  import type { ComponentType } from 'svelte';
-  import type { Icon } from 'lucide-svelte';
-  import { fly } from 'svelte/transition';
+  import type { ComponentType } from "svelte";
+  import type { Icon } from "lucide-svelte";
+  import { fly } from "svelte/transition";
 
   interface Props {
     title: string;
     value: string | number;
     change?: string;
     icon: ComponentType<Icon>;
-    trend?: 'up' | 'down' | 'neutral';
+    trend?: "up" | "down" | "neutral";
     delay?: number;
   }
 
@@ -17,14 +17,14 @@
     value,
     change,
     icon: IconComponent,
-    trend = 'neutral',
-    delay = 0
+    trend = "neutral",
+    delay = 0,
   }: Props = $props();
 
   const trendColors = {
-    up: 'text-green-600',
-    down: 'text-red-600',
-    neutral: 'text-muted-foreground',
+    up: "text-green-600",
+    down: "text-red-600",
+    neutral: "text-muted-foreground",
   };
 </script>
 
@@ -37,14 +37,18 @@
       <p class="text-sm text-muted-foreground mb-1">{title}</p>
       <h3 class="text-3xl">{value}</h3>
     </div>
-    <div class="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center">
+    <div
+      class="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center"
+    >
       <IconComponent class="w-6 h-6 text-primary" />
     </div>
   </div>
   {#if change}
     <p class="text-sm {trendColors[trend]}">
-      {#if trend === 'up'}↑ {/if}
-      {#if trend === 'down'}↓ {/if}
+      {#if trend === "up"}↑
+      {/if}
+      {#if trend === "down"}↓
+      {/if}
       {change}
     </p>
   {/if}

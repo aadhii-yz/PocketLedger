@@ -1,12 +1,12 @@
 <script lang="ts">
-  import ImprovedSidebar from '$lib/components/ImprovedSidebar.svelte';
-  import FluidLayout from '$lib/components/FluidLayout.svelte';
-  import Card from '$lib/components/Card.svelte';
-  import StatCard from '$lib/components/StatCard.svelte';
-  import Button from '$lib/components/Button.svelte';
-  import DataTable from '$lib/components/DataTable.svelte';
-  import PageHeader from '$lib/components/PageHeader.svelte';
-  import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
+  import ImprovedSidebar from "$lib/components/ImprovedSidebar.svelte";
+  import FluidLayout from "$lib/components/FluidLayout.svelte";
+  import Card from "$lib/components/Card.svelte";
+  import StatCard from "$lib/components/StatCard.svelte";
+  import Button from "$lib/components/Button.svelte";
+  import DataTable from "$lib/components/DataTable.svelte";
+  import PageHeader from "$lib/components/PageHeader.svelte";
+  import LoadingSpinner from "$lib/components/LoadingSpinner.svelte";
   import {
     Package,
     ShoppingBag,
@@ -18,14 +18,14 @@
     X,
     AlertCircle,
     Tag,
-  } from 'lucide-svelte';
-  import { pb, customFetch } from '$lib/pb';
-  import { onMount } from 'svelte';
-  import { slide } from 'svelte/transition';
+  } from "lucide-svelte";
+  import { pb, customFetch } from "$lib/pb";
+  import { onMount } from "svelte";
+  import { slide } from "svelte/transition";
 
   const menuItems = [
-    { label: 'Product Management', icon: ShoppingBag, path: '/stock/products' },
-    { label: 'Stock Management', icon: Package, path: '/stock/inventory' },
+    { label: "Product Management", icon: ShoppingBag, path: "/stock/products" },
+    { label: "Stock Management", icon: Package, path: "/stock/inventory" },
   ];
 
   interface StockProduct {
@@ -59,50 +59,62 @@
   let loading = $state(true);
   let stockEntries = $state<StockEntry[]>([]);
   let showAddForm = $state(false);
-  let searchQuery = $state('');
+  let searchQuery = $state("");
   let saving = $state(false);
-  let errorMsg = $state('');
+  let errorMsg = $state("");
 
   // Category management
   let categories = $state<Category[]>([]);
   let showCategoryForm = $state(false);
-  let categoryForm = $state({ name: '', description: '' });
+  let categoryForm = $state({ name: "", description: "" });
   let savingCategory = $state(false);
-  let categoryError = $state('');
+  let categoryError = $state("");
 
   let formData = $state({
-    productId: '',
-    quantity: '',
-    note: '',
-    type: 'purchase',
+    productId: "",
+    quantity: "",
+    note: "",
+    type: "purchase",
   });
 
   // ── Data Loading ───────────────────────────────────────────────────────────
   async function loadData() {
     try {
       loading = true;
-      const [productRecords, stockRecords, categoryRecords] = await Promise.all([
-        pb.collection('products').getFullList({ expand: 'category', sort: 'name' }),
-        pb.collection('stock').getFullList({ expand: 'product' }),
-        pb.collection('categories').getFullList({ sort: 'name' }),
-      ]);
+      const [productRecords, stockRecords, categoryRecords] = await Promise.all(
+        [
+          pb
+            .collection("products")
+            .getFullList({ expand: "category", sort: "name" }),
+          pb.collection("stock").getFullList({ expand: "product" }),
+          pb.collection("categories").getFullList({ sort: "name" }),
+        ],
+      );
 
       const stockMap = new Map(
         stockRecords.map((s: any) => [
           s.product,
-          { stockId: s.id, quantity: s.quantity as number, threshold: s.low_stock_threshold as number },
-        ])
+          {
+            stockId: s.id,
+            quantity: s.quantity as number,
+            threshold: s.low_stock_threshold as number,
+          },
+        ]),
       );
 
       products = productRecords.map((p: any) => {
-        const s = stockMap.get(p.id) || { stockId: '', quantity: 0, threshold: 0 };
+        const s = stockMap.get(p.id) || {
+          stockId: "",
+          quantity: 0,
+          threshold: 0,
+        };
         return {
           id: p.id,
           stockId: s.stockId,
           name: p.name,
-          sku: p.sku || '',
-          barcode: p.barcode || '',
-          category: p.expand?.category?.name || '',
+          sku: p.sku || "",
+          barcode: p.barcode || "",
+          category: p.expand?.category?.name || "",
           sellingPrice: p.selling_price || 0,
           quantity: s.quantity,
           lowStockThreshold: s.threshold,
@@ -112,10 +124,10 @@
       categories = categoryRecords.map((c: any) => ({
         id: c.id,
         name: c.name,
-        description: c.description || '',
+        description: c.description || "",
       }));
     } catch {
-      errorMsg = 'Failed to load stock data';
+      errorMsg = "Failed to load stock data";
     } finally {
       loading = false;
     }
@@ -127,18 +139,18 @@
 
   // ── Form Helpers ───────────────────────────────────────────────────────────
   function resetForm() {
-    formData = { productId: '', quantity: '', note: '', type: 'purchase' };
+    formData = { productId: "", quantity: "", note: "", type: "purchase" };
     showAddForm = false;
-    errorMsg = '';
+    errorMsg = "";
   }
 
   async function handleSubmit(e: SubmitEvent) {
     e.preventDefault();
     saving = true;
-    errorMsg = '';
+    errorMsg = "";
     try {
-      await customFetch('/stock/adjust', {
-        method: 'POST',
+      await customFetch("/stock/adjust", {
+        method: "POST",
         body: JSON.stringify({
           product_id: formData.productId,
           quantity: Number(formData.quantity),
@@ -150,21 +162,21 @@
       const product = products.find((p) => p.id === formData.productId);
       const newEntry: StockEntry = {
         productId: formData.productId,
-        productName: product?.name || '',
+        productName: product?.name || "",
         quantity: Number(formData.quantity),
         note: formData.note || `${formData.type} entry`,
-        date: new Date().toISOString().split('T')[0],
+        date: new Date().toISOString().split("T")[0],
       };
 
       stockEntries = [newEntry, ...stockEntries];
       products = products.map((p) =>
         p.id === formData.productId
           ? { ...p, quantity: p.quantity + Number(formData.quantity) }
-          : p
+          : p,
       );
       resetForm();
     } catch (e: any) {
-      errorMsg = e.message || 'Failed to adjust stock';
+      errorMsg = e.message || "Failed to adjust stock";
     } finally {
       saving = false;
     }
@@ -173,20 +185,24 @@
   async function handleAddCategory(e: SubmitEvent) {
     e.preventDefault();
     savingCategory = true;
-    categoryError = '';
+    categoryError = "";
     try {
-      const record = await pb.collection('categories').create({
+      const record = await pb.collection("categories").create({
         name: categoryForm.name.trim(),
         description: categoryForm.description.trim(),
       });
       categories = [
         ...categories,
-        { id: record.id, name: record['name'], description: record['description'] || '' },
+        {
+          id: record.id,
+          name: record["name"],
+          description: record["description"] || "",
+        },
       ].sort((a, b) => a.name.localeCompare(b.name));
-      categoryForm = { name: '', description: '' };
+      categoryForm = { name: "", description: "" };
       showCategoryForm = false;
     } catch (e: any) {
-      categoryError = e.message || 'Failed to add category';
+      categoryError = e.message || "Failed to add category";
     } finally {
       savingCategory = false;
     }
@@ -194,11 +210,13 @@
 
   // ── Derived ────────────────────────────────────────────────────────────────
   let totalStockValue = $derived(
-    products.reduce((sum, p) => sum + p.sellingPrice * p.quantity, 0)
+    products.reduce((sum, p) => sum + p.sellingPrice * p.quantity, 0),
   );
 
   let lowStockCount = $derived(
-    products.filter((p) => p.lowStockThreshold > 0 && p.quantity <= p.lowStockThreshold).length
+    products.filter(
+      (p) => p.lowStockThreshold > 0 && p.quantity <= p.lowStockThreshold,
+    ).length,
   );
 
   let filteredProducts = $derived.by(() => {
@@ -209,19 +227,21 @@
         p.name.toLowerCase().includes(q) ||
         p.category.toLowerCase().includes(q) ||
         p.barcode.toLowerCase().includes(q) ||
-        p.sku.toLowerCase().includes(q)
+        p.sku.toLowerCase().includes(q),
     );
   });
 
-  let selectedProduct = $derived(products.find((p) => p.id === formData.productId));
+  let selectedProduct = $derived(
+    products.find((p) => p.id === formData.productId),
+  );
 
   // ── Table columns ──────────────────────────────────────────────────────────
   const columns: any[] = [
-    { header: 'Product Name', accessor: 'name' },
-    { header: 'Category', accessor: 'category' },
-    { header: 'Barcode/SKU', accessor: 'barcode' },
-    { header: 'Stock', accessor: 'quantity' },
-    { header: 'Price', accessor: 'sellingPrice' },
+    { header: "Product Name", accessor: "name" },
+    { header: "Category", accessor: "category" },
+    { header: "Barcode/SKU", accessor: "barcode" },
+    { header: "Stock", accessor: "quantity" },
+    { header: "Price", accessor: "sellingPrice" },
   ];
 </script>
 
@@ -243,7 +263,7 @@
         }
       }}
     >
-      {showAddForm ? 'Cancel' : 'Add Stock'}
+      {showAddForm ? "Cancel" : "Add Stock"}
     </Button>
   {/snippet}
 
@@ -256,17 +276,50 @@
     />
 
     {#if errorMsg}
-      <div class="mb-4 flex items-center gap-2 p-3 bg-destructive/10 border border-destructive/30 rounded-lg text-destructive text-sm">
-        <AlertCircle class="w-4 h-4" /> {errorMsg}
+      <div
+        class="mb-4 flex items-center gap-2 p-3 bg-destructive/10 border border-destructive/30 rounded-lg text-destructive text-sm"
+      >
+        <AlertCircle class="w-4 h-4" />
+        {errorMsg}
       </div>
     {/if}
 
     <!-- Summary Cards -->
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-6 md:mb-8">
-      <StatCard title="Total Products" value={products.length} change="In catalog" icon={Package} trend="neutral" delay={0} />
-      <StatCard title="Stock Value" value={`₹${(totalStockValue / 1000).toFixed(0)}K`} change="Total inventory" icon={DollarSign} trend="up" delay={0.1} />
-      <StatCard title="Low Stock Items" value={lowStockCount} change="Need reorder" icon={AlertTriangle} trend="down" delay={0.2} />
-      <StatCard title="Stock Entries" value={stockEntries.length} change="This session" icon={TrendingUp} trend="neutral" delay={0.3} />
+    <div
+      class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 mb-6 md:mb-8"
+    >
+      <StatCard
+        title="Total Products"
+        value={products.length}
+        change="In catalog"
+        icon={Package}
+        trend="neutral"
+        delay={0}
+      />
+      <StatCard
+        title="Stock Value"
+        value={`₹${(totalStockValue / 1000).toFixed(0)}K`}
+        change="Total inventory"
+        icon={DollarSign}
+        trend="up"
+        delay={0.1}
+      />
+      <StatCard
+        title="Low Stock Items"
+        value={lowStockCount}
+        change="Need reorder"
+        icon={AlertTriangle}
+        trend="down"
+        delay={0.2}
+      />
+      <StatCard
+        title="Stock Entries"
+        value={stockEntries.length}
+        change="This session"
+        icon={TrendingUp}
+        trend="neutral"
+        delay={0.3}
+      />
     </div>
 
     <!-- Add Stock Form -->
@@ -278,7 +331,10 @@
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
               <!-- Product Select -->
               <div class="relative w-full mb-6">
-                <label class="block mb-2 text-sm text-muted-foreground" for="productSelect">
+                <label
+                  class="block mb-2 text-sm text-muted-foreground"
+                  for="productSelect"
+                >
                   Select Product <span class="text-destructive">*</span>
                 </label>
                 <select
@@ -289,14 +345,18 @@
                 >
                   <option value="">Choose a product</option>
                   {#each products as p}
-                    <option value={p.id}>{p.name} ({p.barcode || p.sku})</option>
+                    <option value={p.id}>{p.name} ({p.barcode || p.sku})</option
+                    >
                   {/each}
                 </select>
               </div>
 
               <!-- Type Select -->
               <div class="relative w-full mb-6">
-                <label class="block mb-2 text-sm text-muted-foreground" for="typeSelect">
+                <label
+                  class="block mb-2 text-sm text-muted-foreground"
+                  for="typeSelect"
+                >
                   Type <span class="text-destructive">*</span>
                 </label>
                 <select
@@ -313,7 +373,10 @@
 
               <!-- Quantity -->
               <div class="relative w-full mb-6">
-                <label class="block mb-2 text-sm text-muted-foreground" for="qtyInput">
+                <label
+                  class="block mb-2 text-sm text-muted-foreground"
+                  for="qtyInput"
+                >
                   Quantity <span class="text-destructive">*</span>
                 </label>
                 <input
@@ -328,7 +391,10 @@
 
               <!-- Note -->
               <div class="relative w-full mb-6">
-                <label class="block mb-2 text-sm text-muted-foreground" for="noteInput">Note</label>
+                <label
+                  class="block mb-2 text-sm text-muted-foreground"
+                  for="noteInput">Note</label
+                >
                 <input
                   id="noteInput"
                   type="text"
@@ -345,9 +411,13 @@
                 <Card class="bg-blue-50 border-blue-200">
                   <div class="flex items-center justify-between">
                     <div>
-                      <p class="text-sm text-blue-700 mb-1">Stock Entry Summary</p>
+                      <p class="text-sm text-blue-700 mb-1">
+                        Stock Entry Summary
+                      </p>
                       <p class="font-medium">{selectedProduct.name}</p>
-                      <p class="text-sm text-blue-600">Current stock: {selectedProduct.quantity} units</p>
+                      <p class="text-sm text-blue-600">
+                        Current stock: {selectedProduct.quantity} units
+                      </p>
                     </div>
                     <div class="text-right">
                       <p class="text-sm text-blue-700">After Adjustment</p>
@@ -361,8 +431,12 @@
             {/if}
 
             <div class="flex gap-3">
-              <Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Add Stock Entry'}</Button>
-              <Button type="button" variant="outline" onclick={resetForm}>Cancel</Button>
+              <Button type="submit" disabled={saving}
+                >{saving ? "Saving…" : "Add Stock Entry"}</Button
+              >
+              <Button type="button" variant="outline" onclick={resetForm}
+                >Cancel</Button
+              >
             </div>
           </form>
         </Card>
@@ -379,8 +453,8 @@
         <button
           onclick={() => {
             showCategoryForm = !showCategoryForm;
-            categoryError = '';
-            categoryForm = { name: '', description: '' };
+            categoryError = "";
+            categoryForm = { name: "", description: "" };
           }}
           class="flex items-center gap-1.5 px-3 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:opacity-90 transition-opacity"
         >
@@ -394,15 +468,24 @@
 
       {#if showCategoryForm}
         <div transition:slide={{ duration: 250 }} class="mb-4 overflow-hidden">
-          <form onsubmit={handleAddCategory} class="p-4 bg-muted rounded-lg space-y-3">
+          <form
+            onsubmit={handleAddCategory}
+            class="p-4 bg-muted rounded-lg space-y-3"
+          >
             {#if categoryError}
-              <div class="flex items-center gap-2 text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-lg px-3 py-2">
-                <AlertCircle class="w-4 h-4 shrink-0" /> {categoryError}
+              <div
+                class="flex items-center gap-2 text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-lg px-3 py-2"
+              >
+                <AlertCircle class="w-4 h-4 shrink-0" />
+                {categoryError}
               </div>
             {/if}
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label class="block text-sm text-muted-foreground mb-1" for="catName">
+                <label
+                  class="block text-sm text-muted-foreground mb-1"
+                  for="catName"
+                >
                   Category Name <span class="text-destructive">*</span>
                 </label>
                 <input
@@ -415,7 +498,10 @@
                 />
               </div>
               <div>
-                <label class="block text-sm text-muted-foreground mb-1" for="catDesc">Description</label>
+                <label
+                  class="block text-sm text-muted-foreground mb-1"
+                  for="catDesc">Description</label
+                >
                 <input
                   id="catDesc"
                   type="text"
@@ -431,7 +517,7 @@
                 disabled={savingCategory}
                 class="px-4 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:opacity-90 disabled:opacity-50 transition-opacity"
               >
-                {savingCategory ? 'Saving…' : 'Save Category'}
+                {savingCategory ? "Saving…" : "Save Category"}
               </button>
               <button
                 type="button"
@@ -446,7 +532,9 @@
       {/if}
 
       {#if categories.length === 0}
-        <p class="text-sm text-muted-foreground py-4 text-center">No categories yet. Add one above.</p>
+        <p class="text-sm text-muted-foreground py-4 text-center">
+          No categories yet. Add one above.
+        </p>
       {:else}
         <div class="flex flex-wrap gap-2">
           {#each categories as cat (cat.id)}
@@ -463,17 +551,23 @@
 
     <!-- Current Stock Levels Table -->
     <Card class="mb-6 md:mb-8">
-      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
+      <div
+        class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5"
+      >
         <h3 class="text-lg md:text-xl">
           Current Stock Levels
           <span class="ml-2 text-sm font-normal text-muted-foreground">
-            ({filteredProducts.length}{searchQuery ? ` of ${products.length}` : ''})
+            ({filteredProducts.length}{searchQuery
+              ? ` of ${products.length}`
+              : ""})
           </span>
         </h3>
 
         <!-- Search -->
         <div class="relative w-full sm:w-72">
-          <Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+          <Search
+            class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none"
+          />
           <input
             type="text"
             bind:value={searchQuery}
@@ -482,7 +576,7 @@
           />
           {#if searchQuery}
             <button
-              onclick={() => (searchQuery = '')}
+              onclick={() => (searchQuery = "")}
               class="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
             >
               <X class="w-3.5 h-3.5" />
@@ -497,22 +591,27 @@
         <div class="text-center py-12 text-muted-foreground">
           <Package class="w-10 h-10 mx-auto mb-3 opacity-30" />
           <p class="text-sm">
-            {searchQuery ? `No products match "${searchQuery}"` : 'No products in stock yet.'}
+            {searchQuery
+              ? `No products match "${searchQuery}"`
+              : "No products in stock yet."}
           </p>
         </div>
       {:else}
         <div class="overflow-x-auto">
           {#snippet cell(row: any, column: any)}
-            {#if column.header === 'Category'}
-              <span class="px-2 py-1 bg-muted rounded text-sm">{row.category}</span>
-            {:else if column.header === 'Barcode/SKU'}
+            {#if column.header === "Category"}
+              <span class="px-2 py-1 bg-muted rounded text-sm"
+                >{row.category}</span
+              >
+            {:else if column.header === "Barcode/SKU"}
               <span class="font-mono text-sm">{row.barcode || row.sku}</span>
-            {:else if column.header === 'Stock'}
+            {:else if column.header === "Stock"}
               <div class="flex items-center gap-2">
                 <span
                   class="font-medium {row.quantity === 0
                     ? 'text-destructive'
-                    : row.lowStockThreshold > 0 && row.quantity <= row.lowStockThreshold
+                    : row.lowStockThreshold > 0 &&
+                        row.quantity <= row.lowStockThreshold
                       ? 'text-yellow-600'
                       : 'text-green-600'}"
                 >
@@ -522,7 +621,7 @@
                   <AlertTriangle class="w-4 h-4 text-yellow-500" />
                 {/if}
               </div>
-            {:else if column.header === 'Price'}
+            {:else if column.header === "Price"}
               <span>₹{row.sellingPrice.toLocaleString()}</span>
             {:else}
               {row[column.accessor]}

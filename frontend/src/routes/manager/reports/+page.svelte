@@ -1,23 +1,43 @@
 <script lang="ts">
-  import ImprovedSidebar from '$lib/components/ImprovedSidebar.svelte';
-  import FluidLayout from '$lib/components/FluidLayout.svelte';
-  import Card from '$lib/components/Card.svelte';
-  import Button from '$lib/components/Button.svelte';
-  import PageHeader from '$lib/components/PageHeader.svelte';
-  import { LayoutDashboard, TrendingUp, Package, FileText, Download, CheckCircle, FileBarChart, Calendar, Users } from 'lucide-svelte';
-  import { fly } from 'svelte/transition';
+  import ImprovedSidebar from "$lib/components/ImprovedSidebar.svelte";
+  import FluidLayout from "$lib/components/FluidLayout.svelte";
+  import Card from "$lib/components/Card.svelte";
+  import Button from "$lib/components/Button.svelte";
+  import PageHeader from "$lib/components/PageHeader.svelte";
+  import {
+    LayoutDashboard,
+    TrendingUp,
+    Package,
+    FileText,
+    Download,
+    CheckCircle,
+    FileBarChart,
+    Calendar,
+    Users,
+  } from "lucide-svelte";
+  import { fly } from "svelte/transition";
 
   const menuItems = [
-    { label: 'Dashboard', icon: LayoutDashboard, path: '/manager' },
-    { label: 'Sales Analysis', icon: TrendingUp, path: '/manager/sales' },
-    { label: 'Stock Analysis', icon: Package, path: '/manager/stock' },
-    { label: 'Reports', icon: FileText, path: '/manager/reports' },
-    { label: 'Users', icon: Users, path: '/manager/users' },
+    { label: "Dashboard", icon: LayoutDashboard, path: "/manager" },
+    { label: "Sales Analysis", icon: TrendingUp, path: "/manager/sales" },
+    { label: "Stock Analysis", icon: Package, path: "/manager/stock" },
+    { label: "Reports", icon: FileText, path: "/manager/reports" },
+    { label: "Users", icon: Users, path: "/manager/users" },
   ];
 
   const MONTHS = [
-    'January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December',
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
   ];
 
   const currentYear = new Date().getFullYear();
@@ -37,7 +57,7 @@
   function simulateDownload(reportId: string) {
     downloading = reportId;
     downloadProgress[reportId] = 0;
-    
+
     const interval = setInterval(() => {
       downloadProgress[reportId] += 5;
       if (downloadProgress[reportId] >= 100) clearInterval(interval);
@@ -49,7 +69,7 @@
       const newSet = new Set(downloaded);
       newSet.add(reportId);
       downloaded = newSet;
-      
+
       setTimeout(() => {
         const resetSet = new Set(downloaded);
         resetSet.delete(reportId);
@@ -80,46 +100,47 @@
 
   const reports = [
     {
-      id: 'sales',
-      name: 'Sales Report',
-      description: 'Comprehensive sales analysis including daily, weekly, and monthly breakdowns',
+      id: "sales",
+      name: "Sales Report",
+      description:
+        "Comprehensive sales analysis including daily, weekly, and monthly breakdowns",
       icon: TrendingUp,
       includes: [
-        'Sales trends and patterns',
-        'Top selling products',
-        'Payment method analysis',
-        'Revenue by time of day',
-        'Category-wise performance',
+        "Sales trends and patterns",
+        "Top selling products",
+        "Payment method analysis",
+        "Revenue by time of day",
+        "Category-wise performance",
       ],
-      color: 'bg-green-100 text-green-700',
+      color: "bg-green-100 text-green-700",
     },
     {
-      id: 'stock',
-      name: 'Stock Report',
-      description: 'Complete inventory status and stock level analysis',
+      id: "stock",
+      name: "Stock Report",
+      description: "Complete inventory status and stock level analysis",
       icon: Package,
       includes: [
-        'Current stock levels',
-        'Low stock alerts',
-        'Stock distribution by category',
-        'Stock health metrics',
-        'Reorder recommendations',
+        "Current stock levels",
+        "Low stock alerts",
+        "Stock distribution by category",
+        "Stock health metrics",
+        "Reorder recommendations",
       ],
-      color: 'bg-blue-100 text-blue-700',
+      color: "bg-blue-100 text-blue-700",
     },
     {
-      id: 'financial',
-      name: 'Financial Report',
-      description: 'Profit, revenue, and financial performance metrics',
+      id: "financial",
+      name: "Financial Report",
+      description: "Profit, revenue, and financial performance metrics",
       icon: FileBarChart,
       includes: [
-        'Revenue summary',
-        'Profit margins',
-        'Transaction analysis',
-        'Payment trends',
-        'Financial forecasts',
+        "Revenue summary",
+        "Profit margins",
+        "Transaction analysis",
+        "Payment trends",
+        "Financial forecasts",
       ],
-      color: 'bg-purple-100 text-purple-700',
+      color: "bg-purple-100 text-purple-700",
     },
   ];
 </script>
@@ -142,22 +163,31 @@
     <div in:fly={{ y: 16, duration: 350 }}>
       <Card class="mb-6 md:mb-8 border-[1.5px] border-[#e0d8f0]">
         <div class="flex items-center gap-3 mb-5">
-          <div class="w-10 h-10 rounded-lg bg-purple-100 flex items-center justify-center">
+          <div
+            class="w-10 h-10 rounded-lg bg-purple-100 flex items-center justify-center"
+          >
             <Calendar class="w-5 h-5 text-purple-700" />
           </div>
           <div>
-            <h3 class="text-lg font-medium text-gray-900">Monthly Report Download</h3>
-            <p class="text-sm text-muted-foreground">Select a month and year to download a targeted report</p>
+            <h3 class="text-lg font-medium text-gray-900">
+              Monthly Report Download
+            </h3>
+            <p class="text-sm text-muted-foreground">
+              Select a month and year to download a targeted report
+            </p>
           </div>
         </div>
 
         <div class="flex flex-col sm:flex-row gap-3 mb-5">
           <div class="flex-1">
-            <label class="block text-xs font-medium text-muted-foreground mb-1.5 uppercase tracking-wide" for="monthSelect">Month</label>
+            <label
+              class="block text-xs font-medium text-muted-foreground mb-1.5 uppercase tracking-wide"
+              for="monthSelect">Month</label
+            >
             <select
               id="monthSelect"
               bind:value={selectedMonth}
-              onchange={() => monthlyDownloaded = false}
+              onchange={() => (monthlyDownloaded = false)}
               class="w-full px-3 py-2.5 text-sm border border-border rounded-lg bg-background outline-none focus:ring-2 focus:ring-ring transition-all"
             >
               {#each MONTHS as m}
@@ -167,11 +197,14 @@
           </div>
 
           <div class="w-full sm:w-36">
-            <label class="block text-xs font-medium text-muted-foreground mb-1.5 uppercase tracking-wide" for="yearSelect">Year</label>
+            <label
+              class="block text-xs font-medium text-muted-foreground mb-1.5 uppercase tracking-wide"
+              for="yearSelect">Year</label
+            >
             <select
               id="yearSelect"
               bind:value={selectedYear}
-              onchange={() => monthlyDownloaded = false}
+              onchange={() => (monthlyDownloaded = false)}
               class="w-full px-3 py-2.5 text-sm border border-border rounded-lg bg-background outline-none focus:ring-2 focus:ring-ring transition-all"
             >
               {#each YEARS as y}
@@ -181,11 +214,14 @@
           </div>
         </div>
 
-        <div class="flex items-center gap-3 p-3 rounded-lg bg-purple-50 border border-purple-100 mb-5">
+        <div
+          class="flex items-center gap-3 p-3 rounded-lg bg-purple-50 border border-purple-100 mb-5"
+        >
           <FileText class="w-4 h-4 text-purple-600 flex-shrink-0" />
           <div class="flex-1 min-w-0">
             <p class="text-sm font-medium text-purple-900">
-              {selectedMonth} {selectedYear} — Full Business Report
+              {selectedMonth}
+              {selectedYear} — Full Business Report
             </p>
             <p class="text-xs text-purple-600 mt-0.5">
               Sales · Stock · Financial data for the selected month
@@ -197,20 +233,24 @@
           onclick={simulateMonthlyDownload}
           disabled={monthlyDownloading}
           icon={monthlyDownloaded ? CheckCircle : Download}
-          variant={monthlyDownloaded ? 'secondary' : 'primary'}
+          variant={monthlyDownloaded ? "secondary" : "primary"}
           class="w-full sm:w-auto"
         >
           {monthlyDownloading
             ? `Generating ${selectedMonth} ${selectedYear} PDF...`
             : monthlyDownloaded
-            ? `Downloaded — ${selectedMonth} ${selectedYear}`
-            : `Download ${selectedMonth} ${selectedYear} Report (PDF)`}
+              ? `Downloaded — ${selectedMonth} ${selectedYear}`
+              : `Download ${selectedMonth} ${selectedYear} Report (PDF)`}
         </Button>
 
         {#if monthlyDownloading}
           <div class="mt-4">
-            <div class="flex items-center justify-between text-xs text-muted-foreground mb-1">
-              <span>Generating report for {selectedMonth} {selectedYear}...</span>
+            <div
+              class="flex items-center justify-between text-xs text-muted-foreground mb-1"
+            >
+              <span
+                >Generating report for {selectedMonth} {selectedYear}...</span
+              >
               <span>Please wait</span>
             </div>
             <div class="w-full h-2 bg-muted rounded-full overflow-hidden">
@@ -229,10 +269,12 @@
       <div class="flex items-start gap-3">
         <FileText class="w-6 h-6 text-blue-600 mt-1" />
         <div>
-          <h3 class="text-lg mb-2 text-blue-900">General Reports (Last 30 Days)</h3>
+          <h3 class="text-lg mb-2 text-blue-900">
+            General Reports (Last 30 Days)
+          </h3>
           <p class="text-sm text-blue-700">
-            Download general reports covering the last 30 days of data in PDF format,
-            including detailed analytics, charts, and data tables.
+            Download general reports covering the last 30 days of data in PDF
+            format, including detailed analytics, charts, and data tables.
           </p>
         </div>
       </div>
@@ -245,25 +287,33 @@
         {@const isDownloading = downloading === report.id}
         {@const isDownloaded = downloaded.has(report.id)}
         {@const progress = downloadProgress[report.id] || 0}
-        
+
         <div in:fly={{ y: 20, duration: 300, delay: idx * 100 }}>
           <Card class="h-full">
             <div class="flex items-start gap-4 mb-4">
-              <div class="w-12 h-12 rounded-lg flex items-center justify-center {report.color}">
+              <div
+                class="w-12 h-12 rounded-lg flex items-center justify-center {report.color}"
+              >
                 <Icon class="w-6 h-6" />
               </div>
               <div class="flex-1">
                 <h3 class="text-xl mb-1">{report.name}</h3>
-                <p class="text-sm text-muted-foreground">{report.description}</p>
+                <p class="text-sm text-muted-foreground">
+                  {report.description}
+                </p>
               </div>
             </div>
 
             <div class="mb-6">
-              <p class="text-sm font-medium mb-2 text-muted-foreground">Includes:</p>
+              <p class="text-sm font-medium mb-2 text-muted-foreground">
+                Includes:
+              </p>
               <ul class="space-y-1">
                 {#each report.includes as item}
                   <li class="text-sm flex items-start gap-2">
-                    <CheckCircle class="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
+                    <CheckCircle
+                      class="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0"
+                    />
                     <span>{item}</span>
                   </li>
                 {/each}
@@ -274,19 +324,21 @@
               onclick={() => simulateDownload(report.id)}
               disabled={isDownloading}
               icon={isDownloaded ? CheckCircle : Download}
-              variant={isDownloaded ? 'secondary' : 'primary'}
+              variant={isDownloaded ? "secondary" : "primary"}
               class="w-full"
             >
               {isDownloading
-                ? 'Generating PDF...'
+                ? "Generating PDF..."
                 : isDownloaded
-                ? 'Downloaded Successfully'
-                : 'Download Report (Last 30 Days)'}
+                  ? "Downloaded Successfully"
+                  : "Download Report (Last 30 Days)"}
             </Button>
 
             {#if isDownloading}
               <div class="mt-4">
-                <div class="flex items-center justify-between text-xs text-muted-foreground mb-1">
+                <div
+                  class="flex items-center justify-between text-xs text-muted-foreground mb-1"
+                >
                   <span>Generating report...</span>
                   <span>Please wait</span>
                 </div>

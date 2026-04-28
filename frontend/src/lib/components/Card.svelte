@@ -1,7 +1,7 @@
 <script lang="ts">
-  import type { ComponentType } from 'svelte';
-  import type { Icon } from 'lucide-svelte';
-  import { fly } from 'svelte/transition';
+  import type { ComponentType } from "svelte";
+  import type { Icon } from "lucide-svelte";
+  import { fly } from "svelte/transition";
 
   interface Props {
     title?: string;
@@ -9,7 +9,7 @@
     subtitle?: string;
     icon?: ComponentType<Icon>;
     iconColor?: string;
-    children?: import('svelte').Snippet;
+    children?: import("svelte").Snippet;
     class?: string;
   }
 
@@ -20,7 +20,7 @@
     icon: IconComponent,
     iconColor,
     children,
-    class: className = ''
+    class: className = "",
   }: Props = $props();
 </script>
 
@@ -29,8 +29,13 @@
   class="bg-card rounded-xl p-6 shadow-sm border border-border {className}"
 >
   {#if IconComponent}
-    <div class="w-12 h-12 rounded-lg flex items-center justify-center mb-4 {iconColor || 'bg-primary/10'}">
-      <IconComponent class="w-6 h-6 {iconColor ? 'text-primary' : 'text-primary'}" />
+    <div
+      class="w-12 h-12 rounded-lg flex items-center justify-center mb-4 {iconColor ||
+        'bg-primary/10'}"
+    >
+      <IconComponent
+        class="w-6 h-6 {iconColor ? 'text-primary' : 'text-primary'}"
+      />
     </div>
   {/if}
   {#if title}

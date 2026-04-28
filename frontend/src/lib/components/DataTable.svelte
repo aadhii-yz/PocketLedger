@@ -9,14 +9,14 @@
     data: T[];
     columns: Column[];
     class?: string;
-    cell?: import('svelte').Snippet<[T, Column]>;
+    cell?: import("svelte").Snippet<[T, Column]>;
   }
 
-  let { data, columns, class: className = '', cell }: Props = $props();
+  let { data, columns, class: className = "", cell }: Props = $props();
 
   function renderValue(row: T, column: Column) {
-    if (!column.accessor) return '';
-    if (typeof column.accessor === 'function') {
+    if (!column.accessor) return "";
+    if (typeof column.accessor === "function") {
       return column.accessor(row);
     }
     return row[column.accessor as keyof T];
@@ -51,8 +51,6 @@
     </tbody>
   </table>
   {#if data.length === 0}
-    <div class="text-center py-12 text-muted-foreground">
-      No data available
-    </div>
+    <div class="text-center py-12 text-muted-foreground">No data available</div>
   {/if}
 </div>

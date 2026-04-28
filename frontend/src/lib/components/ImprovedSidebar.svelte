@@ -1,12 +1,12 @@
 <script lang="ts">
-  import type { ComponentType } from 'svelte';
-  import type { Icon } from 'lucide-svelte';
-  import { ShoppingBag, Menu, ChevronLeft, X } from 'lucide-svelte';
-  import { goto } from '$app/navigation';
-  import { page } from '$app/stores';
-  import { onMount } from 'svelte';
-  import { pb } from '$lib/pb';
-  import { slide } from 'svelte/transition';
+  import type { ComponentType } from "svelte";
+  import type { Icon } from "lucide-svelte";
+  import { ShoppingBag, Menu, ChevronLeft, X } from "lucide-svelte";
+  import { goto } from "$app/navigation";
+  import { page } from "$app/stores";
+  import { onMount } from "svelte";
+  import { pb } from "$lib/pb";
+  import { slide } from "svelte/transition";
 
   interface MenuItem {
     label: string;
@@ -31,8 +31,8 @@
 
   onMount(() => {
     checkMobile();
-    window.addEventListener('resize', checkMobile);
-    return () => window.removeEventListener('resize', checkMobile);
+    window.addEventListener("resize", checkMobile);
+    return () => window.removeEventListener("resize", checkMobile);
   });
 
   function toggleSidebar() {
@@ -41,7 +41,7 @@
 
   function handleLogout() {
     pb.authStore.clear();
-    goto('/');
+    goto("/");
   }
 </script>
 
@@ -49,7 +49,7 @@
 <button
   onclick={toggleSidebar}
   class="fixed top-4 left-4 z-50 p-3 bg-sidebar text-sidebar-foreground rounded-xl shadow-lg hover:shadow-xl transition-all hover:scale-105 active:scale-95"
-  title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+  title={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
 >
   {#if isCollapsed}
     <Menu class="w-6 h-6" />
@@ -67,13 +67,22 @@
     <!-- Logo/Brand -->
     <div class="px-4 mb-8">
       <div class="flex items-center gap-3">
-        <div class="w-10 h-10 bg-sidebar-primary rounded-lg flex items-center justify-center shrink-0">
+        <div
+          class="w-10 h-10 bg-sidebar-primary rounded-lg flex items-center justify-center shrink-0"
+        >
           <ShoppingBag class="w-6 h-6 text-sidebar-primary-foreground" />
         </div>
         {#if !isCollapsed}
-          <div transition:slide={{ axis: 'x', duration: 200 }} class="overflow-hidden">
+          <div
+            transition:slide={{ axis: "x", duration: 200 }}
+            class="overflow-hidden"
+          >
             <h1 class="text-lg font-semibold whitespace-nowrap">My Garments</h1>
-            <p class="text-xs text-sidebar-foreground/60 capitalize whitespace-nowrap">{userRole}</p>
+            <p
+              class="text-xs text-sidebar-foreground/60 capitalize whitespace-nowrap"
+            >
+              {userRole}
+            </p>
           </div>
         {/if}
       </div>
@@ -92,7 +101,10 @@
         >
           <item.icon class="w-5 h-5 shrink-0" />
           {#if !isCollapsed}
-            <span transition:slide={{ axis: 'x', duration: 200 }} class="overflow-hidden whitespace-nowrap">
+            <span
+              transition:slide={{ axis: "x", duration: 200 }}
+              class="overflow-hidden whitespace-nowrap"
+            >
               {item.label}
             </span>
           {/if}
@@ -105,11 +117,14 @@
       <button
         onclick={handleLogout}
         class="w-full flex items-center gap-3 px-3 py-3 rounded-lg bg-destructive text-destructive-foreground hover:opacity-90 transition-all hover:scale-[1.02]"
-        title={isCollapsed ? 'Logout' : undefined}
+        title={isCollapsed ? "Logout" : undefined}
       >
         <X class="w-5 h-5 shrink-0" />
         {#if !isCollapsed}
-          <span transition:slide={{ axis: 'x', duration: 200 }} class="overflow-hidden whitespace-nowrap">
+          <span
+            transition:slide={{ axis: "x", duration: 200 }}
+            class="overflow-hidden whitespace-nowrap"
+          >
             Logout
           </span>
         {/if}
@@ -119,4 +134,7 @@
 </aside>
 
 <!-- Spacer -->
-<div class="shrink-0 transition-all duration-300 ease-in-out" style="width: {isCollapsed ? '80px' : '260px'};"></div>
+<div
+  class="shrink-0 transition-all duration-300 ease-in-out"
+  style="width: {isCollapsed ? '80px' : '260px'};"
+></div>

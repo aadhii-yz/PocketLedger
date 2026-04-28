@@ -1,27 +1,38 @@
 <script lang="ts">
-  import ImprovedSidebar from '$lib/components/ImprovedSidebar.svelte';
-  import FluidLayout from '$lib/components/FluidLayout.svelte';
-  import Card from '$lib/components/Card.svelte';
-  import Button from '$lib/components/Button.svelte';
-  import Input from '$lib/components/Input.svelte';
-  import DataTable from '$lib/components/DataTable.svelte';
-  import PageHeader from '$lib/components/PageHeader.svelte';
-  import LoadingSpinner from '$lib/components/LoadingSpinner.svelte';
-  import { Users as UsersIcon, Activity, Plus, X, Edit, Trash2, Mail, User, Shield, AlertCircle } from 'lucide-svelte';
-  import { pb } from '$lib/pb';
-  import { onMount } from 'svelte';
-  import { slide } from 'svelte/transition';
+  import ImprovedSidebar from "$lib/components/ImprovedSidebar.svelte";
+  import FluidLayout from "$lib/components/FluidLayout.svelte";
+  import Card from "$lib/components/Card.svelte";
+  import Button from "$lib/components/Button.svelte";
+  import Input from "$lib/components/Input.svelte";
+  import DataTable from "$lib/components/DataTable.svelte";
+  import PageHeader from "$lib/components/PageHeader.svelte";
+  import LoadingSpinner from "$lib/components/LoadingSpinner.svelte";
+  import {
+    Users as UsersIcon,
+    Activity,
+    Plus,
+    X,
+    Edit,
+    Trash2,
+    Mail,
+    User,
+    Shield,
+    AlertCircle,
+  } from "lucide-svelte";
+  import { pb } from "$lib/pb";
+  import { onMount } from "svelte";
+  import { slide } from "svelte/transition";
 
   const menuItems = [
-    { label: 'Users', icon: UsersIcon, path: '/admin/users' },
-    { label: 'System Logs', icon: Activity, path: '/admin/logs' },
+    { label: "Users", icon: UsersIcon, path: "/admin/users" },
+    { label: "System Logs", icon: Activity, path: "/admin/logs" },
   ];
 
   interface SystemUser {
     id: string;
     username: string;
     email: string;
-    role: 'admin' | 'manager' | 'pos' | 'stock_entry';
+    role: "admin" | "manager" | "pos" | "stock_entry";
     fullName: string;
     isActive: boolean;
     createdAt: string;
@@ -32,31 +43,33 @@
   let showAddForm = $state(false);
   let editingUser = $state<SystemUser | null>(null);
   let saving = $state(false);
-  let errorMsg = $state('');
+  let errorMsg = $state("");
 
   let formData = $state({
-    username: '',
-    email: '',
-    fullName: '',
-    role: 'pos' as SystemUser['role'],
-    password: '',
+    username: "",
+    email: "",
+    fullName: "",
+    role: "pos" as SystemUser["role"],
+    password: "",
   });
 
   async function loadUsers() {
     try {
       loading = true;
-      const records = await pb.collection('users').getFullList({ sort: 'created' });
+      const records = await pb
+        .collection("users")
+        .getFullList({ sort: "created" });
       users = records.map((r: any) => ({
         id: r.id,
-        username: r.username || '',
-        email: r.email || '',
-        role: r.role || 'pos',
-        fullName: r.name || '',
+        username: r.username || "",
+        email: r.email || "",
+        role: r.role || "pos",
+        fullName: r.name || "",
         isActive: r.verified !== false,
-        createdAt: r.created ? r.created.split(' ')[0] : '',
+        createdAt: r.created ? r.created.split(" ")[0] : "",
       }));
     } catch {
-      errorMsg = 'Failed to load users';
+      errorMsg = "Failed to load users";
     } finally {
       loading = false;
     }
@@ -67,16 +80,22 @@
   });
 
   function resetForm() {
-    formData = { username: '', email: '', fullName: '', role: 'pos', password: '' };
+    formData = {
+      username: "",
+      email: "",
+      fullName: "",
+      role: "pos",
+      password: "",
+    };
     editingUser = null;
     showAddForm = false;
-    errorMsg = '';
+    errorMsg = "";
   }
 
   async function handleSubmit(e: SubmitEvent) {
     e.preventDefault();
     saving = true;
-    errorMsg = '';
+    errorMsg = "";
     try {
       if (editingUser) {
         const data: any = {
@@ -89,9 +108,9 @@
           data.password = formData.password;
           data.passwordConfirm = formData.password;
         }
-        await pb.collection('users').update(editingUser.id, data);
+        await pb.collection("users").update(editingUser.id, data);
       } else {
-        await pb.collection('users').create({
+        await pb.collection("users").create({
           username: formData.username,
           email: formData.email,
           name: formData.fullName,
@@ -103,7 +122,7 @@
       await loadUsers();
       resetForm();
     } catch (e: any) {
-      errorMsg = e.message || 'Failed to save user';
+      errorMsg = e.message || "Failed to save user";
     } finally {
       saving = false;
     }
@@ -111,34 +130,40 @@
 
   function handleEdit(user: SystemUser) {
     editingUser = user;
-    formData = { username: user.username, email: user.email, fullName: user.fullName, role: user.role, password: '' };
+    formData = {
+      username: user.username,
+      email: user.email,
+      fullName: user.fullName,
+      role: user.role,
+      password: "",
+    };
     showAddForm = true;
   }
 
   async function handleDelete(id: string) {
-    if (!confirm('Are you sure you want to delete this user?')) return;
+    if (!confirm("Are you sure you want to delete this user?")) return;
     try {
-      await pb.collection('users').delete(id);
+      await pb.collection("users").delete(id);
       users = users.filter((u) => u.id !== id);
     } catch (e: any) {
-      alert('Failed to delete: ' + e.message);
+      alert("Failed to delete: " + e.message);
     }
   }
 
   const roleLabel: Record<string, string> = {
-    admin: 'Admin',
-    manager: 'Manager',
-    pos: 'POS / Billing',
-    stock_entry: 'Stock Entry',
+    admin: "Admin",
+    manager: "Manager",
+    pos: "POS / Billing",
+    stock_entry: "Stock Entry",
   };
 
   const columns: any[] = [
-    { header: 'Username', accessor: 'username' },
-    { header: 'Full Name', accessor: 'fullName' },
-    { header: 'Email', accessor: 'email' },
-    { header: 'Role', accessor: 'role' },
-    { header: 'Created', accessor: 'createdAt' },
-    { header: 'Actions' },
+    { header: "Username", accessor: "username" },
+    { header: "Full Name", accessor: "fullName" },
+    { header: "Email", accessor: "email" },
+    { header: "Role", accessor: "role" },
+    { header: "Created", accessor: "createdAt" },
+    { header: "Actions" },
   ];
 </script>
 
@@ -150,8 +175,18 @@
   <ImprovedSidebar {menuItems} userRole="Admin" />
 
   {#snippet actionButton()}
-    <Button icon={showAddForm ? X : Plus} onclick={() => { if (showAddForm) { showAddForm = false; } else { resetForm(); showAddForm = true; } }}>
-      {showAddForm ? 'Cancel' : 'Add User'}
+    <Button
+      icon={showAddForm ? X : Plus}
+      onclick={() => {
+        if (showAddForm) {
+          showAddForm = false;
+        } else {
+          resetForm();
+          showAddForm = true;
+        }
+      }}
+    >
+      {showAddForm ? "Cancel" : "Add User"}
     </Button>
   {/snippet}
 
@@ -164,15 +199,18 @@
     />
 
     {#if errorMsg}
-      <div class="mb-4 flex items-center gap-2 p-3 bg-destructive/10 border border-destructive/30 rounded-lg text-destructive text-sm">
-        <AlertCircle class="w-4 h-4" /> {errorMsg}
+      <div
+        class="mb-4 flex items-center gap-2 p-3 bg-destructive/10 border border-destructive/30 rounded-lg text-destructive text-sm"
+      >
+        <AlertCircle class="w-4 h-4" />
+        {errorMsg}
       </div>
     {/if}
 
     {#if showAddForm}
       <div transition:slide={{ duration: 300 }}>
         <Card class="mb-8">
-          <h3 class="mb-6">{editingUser ? 'Edit User' : 'Add New User'}</h3>
+          <h3 class="mb-6">{editingUser ? "Edit User" : "Add New User"}</h3>
           <form onsubmit={handleSubmit} class="space-y-4">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
               <Input label="Username" bind:value={formData.username} required>
@@ -180,17 +218,28 @@
                   <User class="w-5 h-5" />
                 {/snippet}
               </Input>
-              
-              <Input label="Email" type="email" bind:value={formData.email} required>
+
+              <Input
+                label="Email"
+                type="email"
+                bind:value={formData.email}
+                required
+              >
                 {#snippet icon()}
                   <Mail class="w-5 h-5" />
                 {/snippet}
               </Input>
-              
-              <Input label="Full Name" bind:value={formData.fullName} required />
+
+              <Input
+                label="Full Name"
+                bind:value={formData.fullName}
+                required
+              />
 
               <div class="relative w-full">
-                <label class="block mb-2 text-muted-foreground" for="roleSelect">Role <span class="text-destructive">*</span></label>
+                <label class="block mb-2 text-muted-foreground" for="roleSelect"
+                  >Role <span class="text-destructive">*</span></label
+                >
                 <select
                   id="roleSelect"
                   bind:value={formData.role}
@@ -205,7 +254,9 @@
               </div>
 
               <Input
-                label={editingUser ? 'New Password (leave blank to keep current)' : 'Password'}
+                label={editingUser
+                  ? "New Password (leave blank to keep current)"
+                  : "Password"}
                 type="password"
                 bind:value={formData.password}
                 required={!editingUser}
@@ -213,8 +264,16 @@
             </div>
 
             <div class="flex gap-3">
-              <Button type="submit" disabled={saving}>{saving ? 'Saving…' : editingUser ? 'Update User' : 'Add User'}</Button>
-              <Button type="button" variant="outline" onclick={resetForm}>Cancel</Button>
+              <Button type="submit" disabled={saving}
+                >{saving
+                  ? "Saving…"
+                  : editingUser
+                    ? "Update User"
+                    : "Add User"}</Button
+              >
+              <Button type="button" variant="outline" onclick={resetForm}
+                >Cancel</Button
+              >
             </div>
           </form>
         </Card>
@@ -227,31 +286,47 @@
         <LoadingSpinner />
       {:else}
         {#snippet cell(row: any, column: any)}
-          {#if column.header === 'Username'}
+          {#if column.header === "Username"}
             <div class="flex items-center gap-2">
-              <div class="w-8 h-8 bg-primary/10 rounded-full flex items-center justify-center">
+              <div
+                class="w-8 h-8 bg-primary/10 rounded-full flex items-center justify-center"
+              >
                 <User class="w-4 h-4 text-primary" />
               </div>
               <span class="font-medium">{row.username}</span>
             </div>
-          {:else if column.header === 'Email'}
-            <span class="text-muted-foreground font-mono text-sm">{row.email}</span>
-          {:else if column.header === 'Role'}
+          {:else if column.header === "Email"}
+            <span class="text-muted-foreground font-mono text-sm"
+              >{row.email}</span
+            >
+          {:else if column.header === "Role"}
             <div class="flex items-center gap-2">
               <Shield class="w-4 h-4 text-primary" />
-              <span class="capitalize px-2 py-1 bg-primary/10 text-primary rounded">{roleLabel[row.role] || row.role}</span>
+              <span
+                class="capitalize px-2 py-1 bg-primary/10 text-primary rounded"
+                >{roleLabel[row.role] || row.role}</span
+              >
             </div>
-          {:else if column.header === 'Actions'}
+          {:else if column.header === "Actions"}
             <div class="flex gap-2">
-              <button onclick={() => handleEdit(row)} class="p-2 hover:bg-muted rounded transition-colors">
+              <button
+                onclick={() => handleEdit(row)}
+                class="p-2 hover:bg-muted rounded transition-colors"
+              >
                 <Edit class="w-4 h-4 text-primary" />
               </button>
               <button
                 onclick={() => handleDelete(row.id)}
-                disabled={row.role === 'admin' && users.filter((u) => u.role === 'admin').length === 1}
+                disabled={row.role === "admin" &&
+                  users.filter((u) => u.role === "admin").length === 1}
                 class="p-2 hover:bg-muted rounded transition-colors"
               >
-                <Trash2 class="w-4 h-4 {row.role === 'admin' && users.filter((u) => u.role === 'admin').length === 1 ? 'text-muted-foreground' : 'text-destructive'}" />
+                <Trash2
+                  class="w-4 h-4 {row.role === 'admin' &&
+                  users.filter((u) => u.role === 'admin').length === 1
+                    ? 'text-muted-foreground'
+                    : 'text-destructive'}"
+                />
               </button>
             </div>
           {:else}
@@ -259,11 +334,7 @@
           {/if}
         {/snippet}
 
-        <DataTable
-          data={users}
-          {columns}
-          {cell}
-        />
+        <DataTable data={users} {columns} {cell} />
       {/if}
     </Card>
   </FluidLayout>
