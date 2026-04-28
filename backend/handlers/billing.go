@@ -117,7 +117,7 @@ func CreateBill(app core.App) func(*core.RequestEvent) error {
 				stockRecords, err := txApp.FindRecordsByFilter(
 					"stock",
 					"product = {:product}",
-					"-created", 1, 0,
+					"", 1, 0,
 					dbx.Params{"product": product.Id},
 				)
 				if err != nil || len(stockRecords) == 0 {

@@ -200,7 +200,7 @@ func ensureBills(app core.App) error {
 	col.Fields.Add(&core.SelectField{
 		Name:      "payment_method",
 		MaxSelect: 1,
-		Values:    []string{"cash", "card", "upi", "credit"},
+		Values:    []string{"cash", "card", "upi"},
 	})
 	col.Fields.Add(&core.SelectField{
 		Name:      "payment_status",
