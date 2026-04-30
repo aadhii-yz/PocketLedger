@@ -1,11 +1,13 @@
 package collections
 
 import (
+	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 )
 
 func CreateCollections(app core.App) error {
 	for _, fn := range []func(core.App) error{
+		ensureLocations,
 		ensureUsersExtended,
 		ensureCategories,
 		ensureProducts,
@@ -14,12 +16,45 @@ func CreateCollections(app core.App) error {
 		ensureBills,
 		ensureBillItems,
 		ensureSystemLogs,
+		ensureStockTransfers,
+		ensureStockTransferItems,
 	} {
 		if err := fn(app); err != nil {
 			return err
 		}
 	}
-	return nil
+	return EnsureDefaultLocations(app)
+}
+
+// Helper function
+func colId(app core.App, name string) string {
+	col, err := app.FindCollectionByNameOrId(name)
+	if err != nil || col == nil {
+		return ""
+	}
+	return col.Id
+}
+
+func ensureLocations(app core.App) error {
+	if _, err := app.FindCollectionByNameOrId("locations"); err == nil {
+		return nil
+	}
+	col := core.NewBaseCollection("locations")
+	col.ListRule = new("@request.auth.id != ''")
+	col.ViewRule = new("@request.auth.id != ''")
+	col.CreateRule = new("@request.auth.role = 'admin' || @request.auth.role = 'manager'")
+	col.UpdateRule = new("@request.auth.role = 'admin' || @request.auth.role = 'manager'")
+	col.DeleteRule = new("@request.auth.role = 'admin'")
+	col.Fields.Add(&core.TextField{Name: "name", Required: true})
+	col.Fields.Add(&core.SelectField{
+		Name:      "type",
+		MaxSelect: 1,
+		Values:    []string{"warehouse", "shop"},
+	})
+	col.Fields.Add(&core.TextField{Name: "address"})
+	col.Fields.Add(&core.TextField{Name: "phone"})
+	col.Fields.Add(&core.BoolField{Name: "is_active"})
+	return app.Save(col)
 }
 
 func ensureUsersExtended(app core.App) error {
@@ -28,17 +63,6 @@ func ensureUsersExtended(app core.App) error {
 		return err
 	}
 
-	if col.Fields.GetByName("role") != nil {
-		return nil // already extended
-	}
-
-	col.Fields.Add(&core.SelectField{
-		Name:      "role",
-		Required:  true,
-		MaxSelect: 1,
-		Values:    []string{"admin", "manager", "pos", "stock_entry"},
-	})
-
 	apiRule := "@request.auth.role = 'admin' || @request.auth.role = 'manager'"
 	col.ListRule = &apiRule
 	col.ViewRule = &apiRule
@@ -46,6 +70,30 @@ func ensureUsersExtended(app core.App) error {
 	col.UpdateRule = &apiRule
 	col.DeleteRule = &apiRule
 
+	changed := false
+
+	if col.Fields.GetByName("role") == nil {
+		col.Fields.Add(&core.SelectField{
+			Name:      "role",
+			Required:  true,
+			MaxSelect: 1,
+			Values:    []string{"admin", "manager", "pos", "stock_entry"},
+		})
+		changed = true
+	}
+
+	if col.Fields.GetByName("assigned_shop") == nil {
+		col.Fields.Add(&core.RelationField{
+			Name:         "assigned_shop",
+			CollectionId: colId(app, "locations"),
+			MaxSelect:    1,
+		})
+		changed = true
+	}
+
+	if !changed {
+		return nil
+	}
 	return app.Save(col)
 }
 
@@ -75,19 +123,12 @@ func ensureProducts(app core.App) error {
 	col.CreateRule = new(editRole)
 	col.UpdateRule = new(editRole)
 	col.DeleteRule = new("@request.auth.role = 'admin' || @request.auth.role = 'manager'")
-
-	categoriesCol, _ := app.FindCollectionByNameOrId("categories")
-	var categoryColId string
-	if categoriesCol != nil {
-		categoryColId = categoriesCol.Id
-	}
-
 	col.Fields.Add(&core.TextField{Name: "name", Required: true})
 	col.Fields.Add(&core.TextField{Name: "sku", Required: true})
 	col.Fields.Add(&core.TextField{Name: "barcode"})
 	col.Fields.Add(&core.RelationField{
 		Name:         "category",
-		CollectionId: categoryColId,
+		CollectionId: colId(app, "categories"),
 		MaxSelect:    1,
 	})
 	col.Fields.Add(&core.SelectField{
@@ -98,140 +139,200 @@ func ensureProducts(app core.App) error {
 	col.Fields.Add(&core.NumberField{Name: "cost_price", Required: true})
 	col.Fields.Add(&core.NumberField{Name: "selling_price", Required: true})
 	col.Fields.Add(&core.NumberField{Name: "tax_rate"})
-	col.Fields.Add(&core.FileField{
-		Name:      "image",
-		MaxSelect: 1,
-		MaxSize:   5242880,
-	})
+	col.Fields.Add(&core.FileField{Name: "image", MaxSelect: 1, MaxSize: 5242880})
 	return app.Save(col)
 }
 
 func ensureStock(app core.App) error {
-	if _, err := app.FindCollectionByNameOrId("stock"); err == nil {
-		return nil
+	stockCol, err := app.FindCollectionByNameOrId("stock")
+	if err != nil {
+		editRole := "@request.auth.role = 'admin' || @request.auth.role = 'manager' || @request.auth.role = 'stock_entry'"
+		col := core.NewBaseCollection("stock")
+		col.ListRule = new("@request.auth.id != ''")
+		col.ViewRule = new("@request.auth.id != ''")
+		col.CreateRule = new(editRole)
+		col.UpdateRule = new(editRole)
+		col.DeleteRule = new("@request.auth.role = 'admin'")
+		col.Fields.Add(&core.RelationField{
+			Name:         "product",
+			Required:     true,
+			CollectionId: colId(app, "products"),
+			MaxSelect:    1,
+		})
+		col.Fields.Add(&core.RelationField{
+			Name:         "location",
+			Required:     true,
+			CollectionId: colId(app, "locations"),
+			MaxSelect:    1,
+		})
+		col.Fields.Add(&core.NumberField{Name: "quantity", Required: true})
+		col.Fields.Add(&core.NumberField{Name: "low_stock_threshold"})
+		return app.Save(col)
 	}
-	editRole := "@request.auth.role = 'admin' || @request.auth.role = 'manager' || @request.auth.role = 'stock_entry'"
 
-	productsCol, _ := app.FindCollectionByNameOrId("products")
-	var productsColId string
-	if productsCol != nil {
-		productsColId = productsCol.Id
+	// Upgrade path — add location if missing (Required: false to avoid breaking existing rows).
+	if stockCol.Fields.GetByName("location") == nil {
+		stockCol.Fields.Add(&core.RelationField{
+			Name:         "location",
+			CollectionId: colId(app, "locations"),
+			MaxSelect:    1,
+		})
+		return app.Save(stockCol)
 	}
-
-	col := core.NewBaseCollection("stock")
-	col.ListRule = new("@request.auth.id != ''")
-	col.ViewRule = new("@request.auth.id != ''")
-	col.CreateRule = new(editRole)
-	col.UpdateRule = new(editRole)
-	col.DeleteRule = new("@request.auth.role = 'admin'")
-	col.Fields.Add(&core.RelationField{
-		Name:         "product",
-		Required:     true,
-		CollectionId: productsColId,
-		MaxSelect:    1,
-	})
-	col.Fields.Add(&core.NumberField{Name: "quantity", Required: true})
-	col.Fields.Add(&core.NumberField{Name: "low_stock_threshold"})
-	return app.Save(col)
+	return nil
 }
 
 func ensureStockMovements(app core.App) error {
-	if _, err := app.FindCollectionByNameOrId("stock_movements"); err == nil {
+	movCol, err := app.FindCollectionByNameOrId("stock_movements")
+	if err != nil {
+		// Fresh install.
+		viewRole := "@request.auth.role = 'admin' || @request.auth.role = 'manager' || @request.auth.role = 'stock_entry'"
+		col := core.NewBaseCollection("stock_movements")
+		col.ListRule = new(viewRole)
+		col.ViewRule = new(viewRole)
+		col.CreateRule = new("@request.auth.id != ''")
+		col.UpdateRule = new("@request.auth.role = 'admin'")
+		col.DeleteRule = new("@request.auth.role = 'admin'")
+		col.Fields.Add(&core.RelationField{
+			Name:         "product",
+			Required:     true,
+			CollectionId: colId(app, "products"),
+			MaxSelect:    1,
+		})
+		col.Fields.Add(&core.RelationField{
+			Name:         "location",
+			CollectionId: colId(app, "locations"),
+			MaxSelect:    1,
+		})
+		col.Fields.Add(&core.SelectField{
+			Name:      "type",
+			Required:  true,
+			MaxSelect: 1,
+			Values:    []string{"purchase", "sale", "adjustment", "return", "transfer_in", "transfer_out"},
+		})
+		col.Fields.Add(&core.NumberField{Name: "quantity", Required: true})
+		col.Fields.Add(&core.TextField{Name: "reference"})
+		col.Fields.Add(&core.TextField{Name: "note"})
+		return app.Save(col)
+	}
+
+	// Upgrade path.
+	changed := false
+
+	if movCol.Fields.GetByName("location") == nil {
+		movCol.Fields.Add(&core.RelationField{
+			Name:         "location",
+			CollectionId: colId(app, "locations"),
+			MaxSelect:    1,
+		})
+		changed = true
+	}
+
+	if typeField := movCol.Fields.GetByName("type"); typeField != nil {
+		if sf, ok := typeField.(*core.SelectField); ok {
+			existing := make(map[string]bool, len(sf.Values))
+			for _, v := range sf.Values {
+				existing[v] = true
+			}
+			for _, v := range []string{"transfer_in", "transfer_out"} {
+				if !existing[v] {
+					sf.Values = append(sf.Values, v)
+					changed = true
+				}
+			}
+		}
+	}
+
+	if !changed {
 		return nil
 	}
-	viewRole := "@request.auth.role = 'admin' || @request.auth.role = 'manager' || @request.auth.role = 'stock_entry'"
-
-	productsCol, _ := app.FindCollectionByNameOrId("products")
-	var productsColId string
-	if productsCol != nil {
-		productsColId = productsCol.Id
-	}
-
-	col := core.NewBaseCollection("stock_movements")
-	col.ListRule = new(viewRole)
-	col.ViewRule = new(viewRole)
-	col.CreateRule = new("@request.auth.id != ''")
-	col.UpdateRule = new("@request.auth.role = 'admin'")
-	col.DeleteRule = new("@request.auth.role = 'admin'")
-	col.Fields.Add(&core.RelationField{
-		Name:         "product",
-		Required:     true,
-		CollectionId: productsColId,
-		MaxSelect:    1,
-	})
-	col.Fields.Add(&core.SelectField{
-		Name:      "type",
-		Required:  true,
-		MaxSelect: 1,
-		Values:    []string{"purchase", "sale", "adjustment", "return"},
-	})
-	col.Fields.Add(&core.NumberField{Name: "quantity", Required: true})
-	col.Fields.Add(&core.TextField{Name: "reference"})
-	col.Fields.Add(&core.TextField{Name: "note"})
-	return app.Save(col)
+	return app.Save(movCol)
 }
 
 func ensureBills(app core.App) error {
-	if _, err := app.FindCollectionByNameOrId("bills"); err == nil {
+	billsCol, err := app.FindCollectionByNameOrId("bills")
+	if err != nil {
+		// Fresh install.
+		viewRule := "@request.auth.id != '' && (@request.auth.role = 'admin' || @request.auth.role = 'manager' || created_by = @request.auth.id)"
+		col := core.NewBaseCollection("bills")
+		col.ListRule = new(viewRule)
+		col.ViewRule = new(viewRule)
+		col.CreateRule = new("@request.auth.id != ''")
+		col.UpdateRule = new("@request.auth.role = 'admin' || @request.auth.role = 'manager'")
+		col.DeleteRule = new("@request.auth.role = 'admin'")
+		col.Fields.Add(&core.AutodateField{Name: "created", OnCreate: true})
+		col.Fields.Add(&core.TextField{Name: "bill_number", Required: true})
+		col.Fields.Add(&core.RelationField{
+			Name:         "shop",
+			CollectionId: colId(app, "locations"),
+			MaxSelect:    1,
+		})
+		col.Fields.Add(&core.TextField{Name: "customer_name"})
+		col.Fields.Add(&core.TextField{Name: "customer_phone"})
+		col.Fields.Add(&core.JSONField{Name: "items"})
+		col.Fields.Add(&core.NumberField{Name: "subtotal", Required: true})
+		col.Fields.Add(&core.NumberField{Name: "tax_total"})
+		col.Fields.Add(&core.NumberField{Name: "discount"})
+		col.Fields.Add(&core.NumberField{Name: "grand_total", Required: true})
+		col.Fields.Add(&core.SelectField{
+			Name:      "payment_method",
+			MaxSelect: 1,
+			Values:    []string{"cash", "card", "upi", "credit"},
+		})
+		col.Fields.Add(&core.SelectField{
+			Name:      "payment_status",
+			MaxSelect: 1,
+			Values:    []string{"paid", "pending", "partial"},
+		})
+		col.Fields.Add(&core.RelationField{
+			Name:         "created_by",
+			CollectionId: colId(app, "users"),
+			MaxSelect:    1,
+		})
+		col.Fields.Add(&core.TextField{Name: "notes"})
+		return app.Save(col)
+	}
+
+	// Upgrade path.
+	changed := false
+
+	if billsCol.Fields.GetByName("created") == nil {
+		billsCol.Fields.Add(&core.AutodateField{Name: "created", OnCreate: true})
+		changed = true
+	}
+
+	if billsCol.Fields.GetByName("shop") == nil {
+		billsCol.Fields.Add(&core.RelationField{
+			Name:         "shop",
+			CollectionId: colId(app, "locations"),
+			MaxSelect:    1,
+		})
+		changed = true
+	}
+
+	if pmField := billsCol.Fields.GetByName("payment_method"); pmField != nil {
+		if sf, ok := pmField.(*core.SelectField); ok {
+			existing := make(map[string]bool, len(sf.Values))
+			for _, v := range sf.Values {
+				existing[v] = true
+			}
+			if !existing["credit"] {
+				sf.Values = append(sf.Values, "credit")
+				changed = true
+			}
+		}
+	}
+
+	if !changed {
 		return nil
 	}
-	viewRule := "@request.auth.id != '' && (@request.auth.role = 'admin' || @request.auth.role = 'manager' || created_by = @request.auth.id)"
-
-	usersCol, _ := app.FindCollectionByNameOrId("users")
-	var usersColId string
-	if usersCol != nil {
-		usersColId = usersCol.Id
-	}
-
-	col := core.NewBaseCollection("bills")
-	col.ListRule = new(viewRule)
-	col.ViewRule = new(viewRule)
-	col.CreateRule = new("@request.auth.id != ''")
-	col.UpdateRule = new("@request.auth.role = 'admin' || @request.auth.role = 'manager'")
-	col.DeleteRule = new("@request.auth.role = 'admin'")
-	col.Fields.Add(&core.TextField{Name: "bill_number", Required: true})
-	col.Fields.Add(&core.TextField{Name: "customer_name"})
-	col.Fields.Add(&core.TextField{Name: "customer_phone"})
-	col.Fields.Add(&core.JSONField{Name: "items"})
-	col.Fields.Add(&core.NumberField{Name: "subtotal", Required: true})
-	col.Fields.Add(&core.NumberField{Name: "tax_total"})
-	col.Fields.Add(&core.NumberField{Name: "discount"})
-	col.Fields.Add(&core.NumberField{Name: "grand_total", Required: true})
-	col.Fields.Add(&core.SelectField{
-		Name:      "payment_method",
-		MaxSelect: 1,
-		Values:    []string{"cash", "card", "upi"},
-	})
-	col.Fields.Add(&core.SelectField{
-		Name:      "payment_status",
-		MaxSelect: 1,
-		Values:    []string{"paid", "pending", "partial"},
-	})
-	col.Fields.Add(&core.RelationField{
-		Name:         "created_by",
-		CollectionId: usersColId,
-		MaxSelect:    1,
-	})
-	col.Fields.Add(&core.TextField{Name: "notes"})
-	return app.Save(col)
+	return app.Save(billsCol)
 }
 
 func ensureBillItems(app core.App) error {
 	if _, err := app.FindCollectionByNameOrId("bill_items"); err == nil {
 		return nil
 	}
-	billsCol, _ := app.FindCollectionByNameOrId("bills")
-	var billsColId string
-	if billsCol != nil {
-		billsColId = billsCol.Id
-	}
-
-	productsCol, _ := app.FindCollectionByNameOrId("products")
-	var productsColId string
-	if productsCol != nil {
-		productsColId = productsCol.Id
-	}
-
 	col := core.NewBaseCollection("bill_items")
 	col.ListRule = new("@request.auth.id != ''")
 	col.ViewRule = new("@request.auth.id != ''")
@@ -241,12 +342,12 @@ func ensureBillItems(app core.App) error {
 	col.Fields.Add(&core.RelationField{
 		Name:         "bill",
 		Required:     true,
-		CollectionId: billsColId,
+		CollectionId: colId(app, "bills"),
 		MaxSelect:    1,
 	})
 	col.Fields.Add(&core.RelationField{
 		Name:         "product",
-		CollectionId: productsColId,
+		CollectionId: colId(app, "products"),
 		MaxSelect:    1,
 	})
 	col.Fields.Add(&core.TextField{Name: "product_name", Required: true})
@@ -267,11 +368,7 @@ func ensureSystemLogs(app core.App) error {
 	col.CreateRule = new("@request.auth.id != ''")
 	col.UpdateRule = nil
 	col.DeleteRule = new("@request.auth.role = 'admin'")
-
-	col.Fields.Add(&core.AutodateField{
-		Name:     "created",
-		OnCreate: true,
-	})
+	col.Fields.Add(&core.AutodateField{Name: "created", OnCreate: true})
 	col.Fields.Add(&core.SelectField{
 		Name:      "level",
 		Required:  true,
@@ -288,4 +385,159 @@ func ensureSystemLogs(app core.App) error {
 	})
 	col.Fields.Add(&core.TextField{Name: "user_id"})
 	return app.Save(col)
+}
+
+func ensureStockTransfers(app core.App) error {
+	if _, err := app.FindCollectionByNameOrId("stock_transfers"); err == nil {
+		return nil
+	}
+	adminManager := "@request.auth.role = 'admin' || @request.auth.role = 'manager'"
+	col := core.NewBaseCollection("stock_transfers")
+	col.ListRule = new(adminManager)
+	col.ViewRule = new(adminManager)
+	col.CreateRule = new(adminManager)
+	col.UpdateRule = new("@request.auth.role = 'admin'")
+	col.DeleteRule = new("@request.auth.role = 'admin'")
+	col.Fields.Add(&core.TextField{Name: "transfer_number", Required: true})
+	col.Fields.Add(&core.AutodateField{
+		Name:     "created",
+		OnCreate: true,
+	})
+	col.Fields.Add(&core.RelationField{
+		Name:         "from_location",
+		Required:     true,
+		CollectionId: colId(app, "locations"),
+		MaxSelect:    1,
+	})
+	col.Fields.Add(&core.RelationField{
+		Name:         "to_location",
+		Required:     true,
+		CollectionId: colId(app, "locations"),
+		MaxSelect:    1,
+	})
+	col.Fields.Add(&core.SelectField{
+		Name:      "status",
+		Required:  true,
+		MaxSelect: 1,
+		Values:    []string{"pending", "completed", "cancelled"},
+	})
+	col.Fields.Add(&core.TextField{Name: "notes"})
+	col.Fields.Add(&core.RelationField{
+		Name:         "created_by",
+		CollectionId: colId(app, "users"),
+		MaxSelect:    1,
+	})
+	return app.Save(col)
+}
+
+func ensureStockTransferItems(app core.App) error {
+	if _, err := app.FindCollectionByNameOrId("stock_transfer_items"); err == nil {
+		return nil
+	}
+	adminManager := "@request.auth.role = 'admin' || @request.auth.role = 'manager'"
+	col := core.NewBaseCollection("stock_transfer_items")
+	col.ListRule = new(adminManager)
+	col.ViewRule = new(adminManager)
+	col.CreateRule = new(adminManager)
+	col.UpdateRule = new("@request.auth.role = 'admin'")
+	col.DeleteRule = new("@request.auth.role = 'admin'")
+	col.Fields.Add(&core.RelationField{
+		Name:         "transfer",
+		Required:     true,
+		CollectionId: colId(app, "stock_transfers"),
+		MaxSelect:    1,
+	})
+	col.Fields.Add(&core.RelationField{
+		Name:         "product",
+		CollectionId: colId(app, "products"),
+		MaxSelect:    1,
+	})
+	col.Fields.Add(&core.TextField{Name: "product_name", Required: true})
+	col.Fields.Add(&core.NumberField{Name: "quantity", Required: true})
+	col.Fields.Add(&core.TextField{Name: "note"})
+	return app.Save(col)
+}
+
+func EnsureDefaultLocations(app core.App) error {
+	// Step 1: find or create Central Warehouse.
+	warehouseRecords, err := app.FindRecordsByFilter(
+		"locations", "type = 'warehouse' && name = 'Central Warehouse'", "", 1, 0,
+	)
+	if err != nil {
+		return err
+	}
+	var warehouseId string
+	if len(warehouseRecords) > 0 {
+		warehouseId = warehouseRecords[0].Id
+	} else {
+		locCol, err := app.FindCollectionByNameOrId("locations")
+		if err != nil {
+			return err
+		}
+		wh := core.NewRecord(locCol)
+		wh.Set("name", "Central Warehouse")
+		wh.Set("type", "warehouse")
+		wh.Set("is_active", true)
+		if err := app.Save(wh); err != nil {
+			return err
+		}
+		warehouseId = wh.Id
+	}
+
+	// Step 2: find or create Main Shop.
+	shopRecords, err := app.FindRecordsByFilter(
+		"locations", "type = 'shop' && name = 'Main Shop'", "", 1, 0,
+	)
+	if err != nil {
+		return err
+	}
+	var shopId string
+	if len(shopRecords) > 0 {
+		shopId = shopRecords[0].Id
+	} else {
+		locCol, err := app.FindCollectionByNameOrId("locations")
+		if err != nil {
+			return err
+		}
+		sh := core.NewRecord(locCol)
+		sh.Set("name", "Main Shop")
+		sh.Set("type", "shop")
+		sh.Set("is_active", true)
+		if err := app.Save(sh); err != nil {
+			return err
+		}
+		shopId = sh.Id
+	}
+
+	db := app.DB()
+
+	// Step 3: back-fill stock.location.
+	if _, err := db.NewQuery(
+		"UPDATE stock SET location = {:loc} WHERE location = '' OR location IS NULL",
+	).Bind(dbx.Params{"loc": warehouseId}).Execute(); err != nil {
+		return err
+	}
+
+	// Step 4: back-fill bills.shop.
+	if _, err := db.NewQuery(
+		"UPDATE bills SET shop = {:shop} WHERE shop = '' OR shop IS NULL",
+	).Bind(dbx.Params{"shop": shopId}).Execute(); err != nil {
+		return err
+	}
+
+	// Step 4b: back-fill bills.created for rows that have no timestamp.
+	if _, err := db.NewQuery(
+		"UPDATE bills SET created = datetime('now') WHERE created IS NULL OR created = ''",
+	).Execute(); err != nil {
+		return err
+	}
+
+	// Step 5: back-fill stock_movements.location.
+	if _, err := db.NewQuery(
+		"UPDATE stock_movements SET location = {:loc} WHERE location = '' OR location IS NULL",
+	).Bind(dbx.Params{"loc": warehouseId}).Execute(); err != nil {
+		return err
+	}
+
+	return nil
 }

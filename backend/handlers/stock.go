@@ -10,24 +10,30 @@ import (
 )
 
 type StockAdjustRequest struct {
-	ProductID string  `json:"product_id"`
-	Quantity  float64 `json:"quantity"` // positive = add, negative = remove
-	Type      string  `json:"type"`     // purchase | adjustment | return
-	Note      string  `json:"note"`
+	ProductID  string  `json:"product_id"`
+	LocationID string  `json:"location_id"`
+	Quantity   float64 `json:"quantity"` // positive = add, negative = remove
+	Type       string  `json:"type"`     // purchase | adjustment | return
+	Note       string  `json:"note"`
 }
 
-// AdjustStock manually adjusts a product's stock and logs the movement.
+// AdjustStock manually adjusts a product's stock at a specific location and logs the movement.
 func AdjustStock(app core.App) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
 		var req StockAdjustRequest
 		if err := e.BindBody(&req); err != nil {
 			return e.JSON(http.StatusBadRequest, map[string]string{"message": "invalid request body"})
 		}
+		if req.LocationID == "" {
+			return e.JSON(http.StatusBadRequest, map[string]string{"message": "location_id is required"})
+		}
 
 		err := app.RunInTransaction(func(txApp core.App) error {
 			stockRecords, err := txApp.FindRecordsByFilter(
-				"stock", "product = {:product}", "-created", 1, 0,
-				dbx.Params{"product": req.ProductID},
+				"stock",
+				"product = {:product} && location = {:location}",
+				"-created", 1, 0,
+				dbx.Params{"product": req.ProductID, "location": req.LocationID},
 			)
 
 			if err != nil || len(stockRecords) == 0 {
@@ -40,6 +46,7 @@ func AdjustStock(app core.App) func(*core.RequestEvent) error {
 				}
 				sr := core.NewRecord(stockCol)
 				sr.Set("product", req.ProductID)
+				sr.Set("location", req.LocationID)
 				sr.Set("quantity", req.Quantity)
 				if err := txApp.Save(sr); err != nil {
 					return err
@@ -63,6 +70,7 @@ func AdjustStock(app core.App) func(*core.RequestEvent) error {
 			}
 			mv := core.NewRecord(movCol)
 			mv.Set("product", req.ProductID)
+			mv.Set("location", req.LocationID)
 			mv.Set("type", req.Type)
 			mv.Set("quantity", req.Quantity)
 			mv.Set("note", req.Note)
@@ -70,13 +78,12 @@ func AdjustStock(app core.App) func(*core.RequestEvent) error {
 				return err
 			}
 
-			// Write system log for stock adjustment
 			if logsCol, lerr := txApp.FindCollectionByNameOrId("system_logs"); lerr == nil {
 				logRec := core.NewRecord(logsCol)
 				logRec.Set("level", "INFO")
 				logRec.Set("message", fmt.Sprintf("POST /api/custom/stock/adjust — %s | product: %s", req.Type, req.ProductID))
 				logRec.Set("status_code", 200)
-				logRec.Set("details", fmt.Sprintf("Quantity: %.2f | Note: %s", req.Quantity, req.Note))
+				logRec.Set("details", fmt.Sprintf("Location: %s | Quantity: %.2f | Note: %s", req.LocationID, req.Quantity, req.Note))
 				logRec.Set("source", "stock")
 				logRec.Set("user_id", e.Auth.Id)
 				_ = txApp.Save(logRec)
@@ -93,9 +100,11 @@ func AdjustStock(app core.App) func(*core.RequestEvent) error {
 }
 
 // StockAlerts returns products at or below their low_stock_threshold.
+// Optional ?location_id= query param scopes results to a single location.
 func StockAlerts(app core.App) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
-		items, err := services.GetLowStock(app)
+		locationId := e.Request.URL.Query().Get("location_id")
+		items, err := services.GetLowStock(app, locationId)
 		if err != nil {
 			return e.JSON(http.StatusInternalServerError, map[string]string{"message": err.Error()})
 		}

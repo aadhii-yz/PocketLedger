@@ -33,15 +33,33 @@ func main() {
 		g.POST("/bills/create", handlers.CreateBill(app)).
 			BindFunc(middleware.RequireRole("admin", "manager", "pos"))
 
+		// Locations
+		g.GET("/locations", handlers.ListLocations(app)).
+			BindFunc(middleware.RequireRole("admin", "manager", "pos", "stock_entry"))
+		g.POST("/locations", handlers.CreateLocation(app)).
+			BindFunc(middleware.RequireRole("admin", "manager"))
+		g.PATCH("/locations/{id}", handlers.UpdateLocation(app)).
+			BindFunc(middleware.RequireRole("admin", "manager"))
+
 		// Stock
 		g.POST("/stock/adjust", handlers.AdjustStock(app)).
 			BindFunc(middleware.RequireRole("admin", "manager", "stock_entry"))
 		g.GET("/stock/alerts", handlers.StockAlerts(app)).
-			BindFunc(middleware.RequireRole("admin", "manager"))
+			BindFunc(middleware.RequireRole("admin", "manager", "stock_entry"))
+
+		// Transfers
+		g.GET("/transfers", handlers.ListTransfers(app)).
+			BindFunc(middleware.RequireRole("admin", "manager", "stock_entry"))
+		g.POST("/transfers/create", handlers.CreateTransfer(app)).
+			BindFunc(middleware.RequireRole("admin", "manager", "stock_entry"))
+		g.POST("/transfers/{id}/complete", handlers.CompleteTransfer(app)).
+			BindFunc(middleware.RequireRole("admin", "manager", "stock_entry"))
+		g.POST("/transfers/{id}/cancel", handlers.CancelTransfer(app)).
+			BindFunc(middleware.RequireRole("admin", "manager", "stock_entry"))
 
 		// Stats
 		g.GET("/stats/dashboard", handlers.Dashboard(app)).
-			BindFunc(middleware.RequireRole("admin", "manager"))
+			BindFunc(middleware.RequireRole("admin", "manager", "pos", "stock_entry"))
 
 		// System Logs
 		g.POST("/logs", handlers.CreateLog(app)).

@@ -18,6 +18,7 @@ type CartItem struct {
 }
 
 type CreateBillRequest struct {
+	ShopID        string     `json:"shop_id"`
 	CustomerName  string     `json:"customer_name"`
 	CustomerPhone string     `json:"customer_phone"`
 	Items         []CartItem `json:"items"`
@@ -27,7 +28,7 @@ type CreateBillRequest struct {
 	Notes         string     `json:"notes"`
 }
 
-// CreateBill atomically creates a bill, bill_items, deducts stock and logs movements.
+// CreateBill atomically creates a bill, bill_items, deducts shop stock and logs movements.
 // Everything runs in a single SQLite transaction — if stock is insufficient the entire bill rolls back.
 func CreateBill(app core.App) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
@@ -37,6 +38,17 @@ func CreateBill(app core.App) func(*core.RequestEvent) error {
 		}
 		if len(req.Items) == 0 {
 			return e.JSON(http.StatusBadRequest, map[string]string{"message": "cart is empty"})
+		}
+
+		// Resolve shop: explicit shop_id → fallback to the POS user's assigned_shop.
+		shopId := req.ShopID
+		if shopId == "" {
+			shopId = e.Auth.GetString("assigned_shop")
+		}
+		if shopId == "" {
+			return e.JSON(http.StatusBadRequest, map[string]string{
+				"message": "shop_id is required (or assign a shop to this user account)",
+			})
 		}
 
 		var billId, billNumber string
@@ -49,7 +61,6 @@ func CreateBill(app core.App) func(*core.RequestEvent) error {
 			}
 			billNumber = num
 
-			// Total
 			var subtotal, taxTotal float64
 			for _, item := range req.Items {
 				line := item.Quantity * item.UnitPrice
@@ -61,13 +72,13 @@ func CreateBill(app core.App) func(*core.RequestEvent) error {
 				grandTotal = 0
 			}
 
-			// Bill record
 			billsCol, err := txApp.FindCollectionByNameOrId("bills")
 			if err != nil {
 				return err
 			}
 			bill := core.NewRecord(billsCol)
 			bill.Set("bill_number", billNumber)
+			bill.Set("shop", shopId)
 			bill.Set("customer_name", req.CustomerName)
 			bill.Set("customer_phone", req.CustomerPhone)
 			bill.Set("items", req.Items)
@@ -84,7 +95,6 @@ func CreateBill(app core.App) func(*core.RequestEvent) error {
 			}
 			billId = bill.Id
 
-			// Bill items + stock deduction
 			billItemsCol, err := txApp.FindCollectionByNameOrId("bill_items")
 			if err != nil {
 				return err
@@ -100,7 +110,7 @@ func CreateBill(app core.App) func(*core.RequestEvent) error {
 					return fmt.Errorf("product %s not found: %w", item.ProductID, err)
 				}
 
-				// Bill item (price snapshot)
+				// Bill item (price snapshot).
 				bi := core.NewRecord(billItemsCol)
 				bi.Set("bill", billId)
 				bi.Set("product", product.Id)
@@ -113,15 +123,15 @@ func CreateBill(app core.App) func(*core.RequestEvent) error {
 					return err
 				}
 
-				// Find and deduct stock
+				// Find and deduct stock — scoped to this shop only.
 				stockRecords, err := txApp.FindRecordsByFilter(
 					"stock",
-					"product = {:product}",
+					"product = {:product} && location = {:location}",
 					"", 1, 0,
-					dbx.Params{"product": product.Id},
+					dbx.Params{"product": product.Id, "location": shopId},
 				)
 				if err != nil || len(stockRecords) == 0 {
-					return fmt.Errorf("no stock record for %q — add stock first", product.GetString("name"))
+					return fmt.Errorf("no stock record for %q at this shop — add stock first", product.GetString("name"))
 				}
 				sr := stockRecords[0]
 				available := sr.GetFloat("quantity")
@@ -134,9 +144,10 @@ func CreateBill(app core.App) func(*core.RequestEvent) error {
 					return err
 				}
 
-				// Stock movement log
+				// Stock movement log.
 				mv := core.NewRecord(movementsCol)
 				mv.Set("product", product.Id)
+				mv.Set("location", shopId)
 				mv.Set("type", "sale")
 				mv.Set("quantity", -item.Quantity)
 				mv.Set("reference", billNumber)
@@ -146,13 +157,13 @@ func CreateBill(app core.App) func(*core.RequestEvent) error {
 				}
 			}
 
-			// Write system log for bill creation
 			if logsCol, lerr := txApp.FindCollectionByNameOrId("system_logs"); lerr == nil {
 				logRec := core.NewRecord(logsCol)
 				logRec.Set("level", "INFO")
 				logRec.Set("message", fmt.Sprintf("POST /api/custom/bills/create — %s via %s", billNumber, req.PaymentMethod))
 				logRec.Set("status_code", 201)
-				logRec.Set("details", fmt.Sprintf("Grand Total: %.2f | Customer: %s | Status: %s", grandTotal, req.CustomerName, req.PaymentStatus))
+				logRec.Set("details", fmt.Sprintf("Shop: %s | Grand Total: %.2f | Customer: %s | Status: %s",
+					shopId, grandTotal, req.CustomerName, req.PaymentStatus))
 				logRec.Set("source", "billing")
 				logRec.Set("user_id", e.Auth.Id)
 				_ = txApp.Save(logRec)

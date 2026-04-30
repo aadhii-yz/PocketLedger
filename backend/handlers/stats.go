@@ -9,7 +9,8 @@ import (
 
 func Dashboard(app core.App) func(*core.RequestEvent) error {
 	return func(e *core.RequestEvent) error {
-		stats, err := services.GetDashboard(app)
+		shopId := e.Request.URL.Query().Get("shop_id")
+		stats, err := services.GetDashboard(app, shopId)
 		if err != nil {
 			return e.JSON(http.StatusInternalServerError, map[string]string{"message": err.Error()})
 		}

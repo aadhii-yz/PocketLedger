@@ -17,16 +17,27 @@
     Search,
     X,
     AlertCircle,
-    Tag,
   } from "lucide-svelte";
   import { pb, customFetch } from "$lib/pb";
   import { onMount } from "svelte";
   import { slide } from "svelte/transition";
 
+  import { ArrowLeftRight, Store, Warehouse, Receipt } from "lucide-svelte";
+
   const menuItems = [
     { label: "Product Management", icon: ShoppingBag, path: "/stock/products" },
     { label: "Stock Management", icon: Package, path: "/stock/inventory" },
+    { label: "Warehouse", icon: Warehouse, path: "/stock/warehouse" },
+    { label: "Shop Stock", icon: Store, path: "/stock/shops" },
+    { label: "Transfers", icon: ArrowLeftRight, path: "/stock/transfers" },
+    { label: "Shop Stats", icon: TrendingUp, path: "/stats/overview" },
   ];
+
+  interface Location {
+    id: string;
+    name: string;
+    type: string;
+  }
 
   interface StockProduct {
     id: string;
@@ -35,6 +46,8 @@
     sku: string;
     barcode: string;
     category: string;
+    locationId: string;
+    locationName: string;
     sellingPrice: number;
     quantity: number;
     lowStockThreshold: number;
@@ -48,12 +61,6 @@
     date: string;
   }
 
-  interface Category {
-    id: string;
-    name: string;
-    description: string;
-  }
-
   // ── State ──────────────────────────────────────────────────────────────────
   let products = $state<StockProduct[]>([]);
   let loading = $state(true);
@@ -63,15 +70,11 @@
   let saving = $state(false);
   let errorMsg = $state("");
 
-  // Category management
-  let categories = $state<Category[]>([]);
-  let showCategoryForm = $state(false);
-  let categoryForm = $state({ name: "", description: "" });
-  let savingCategory = $state(false);
-  let categoryError = $state("");
+  let locations = $state<Location[]>([]);
 
   let formData = $state({
     productId: "",
+    locationId: "",
     quantity: "",
     note: "",
     type: "purchase",
@@ -81,51 +84,61 @@
   async function loadData() {
     try {
       loading = true;
-      const [productRecords, stockRecords, categoryRecords] = await Promise.all(
-        [
+      const [productRecords, stockRecords, locationRecords] =
+        await Promise.all([
           pb
             .collection("products")
             .getFullList({ expand: "category", sort: "name" }),
-          pb.collection("stock").getFullList({ expand: "product" }),
-          pb.collection("categories").getFullList({ sort: "name" }),
-        ],
-      );
+          pb.collection("stock").getFullList({ expand: "product,location" }),
+          pb.collection("locations").getFullList({ sort: "name" }),
+        ]);
 
-      const stockMap = new Map(
-        stockRecords.map((s: any) => [
-          s.product,
-          {
-            stockId: s.id,
-            quantity: s.quantity as number,
-            threshold: s.low_stock_threshold as number,
-          },
-        ]),
-      );
+      locations = locationRecords.map((l: any) => ({
+        id: l.id,
+        name: l.name,
+        type: l.type,
+      }));
 
-      products = productRecords.map((p: any) => {
-        const s = stockMap.get(p.id) || {
-          stockId: "",
-          quantity: 0,
-          threshold: 0,
-        };
+      const locationMap = new Map(locations.map((l) => [l.id, l.name]));
+
+      // Build one row per (product, location) combination.
+      products = stockRecords.map((s: any) => {
+        const p = s.expand?.product;
         return {
-          id: p.id,
-          stockId: s.stockId,
-          name: p.name,
-          sku: p.sku || "",
-          barcode: p.barcode || "",
-          category: p.expand?.category?.name || "",
-          sellingPrice: p.selling_price || 0,
-          quantity: s.quantity,
-          lowStockThreshold: s.threshold,
+          id: p?.id || s.product,
+          stockId: s.id,
+          name: p?.name || "Unknown",
+          sku: p?.sku || "",
+          barcode: p?.barcode || "",
+          category: p?.expand?.category?.name || "",
+          locationId: s.location,
+          locationName: locationMap.get(s.location) || s.location,
+          sellingPrice: p?.selling_price || 0,
+          quantity: s.quantity as number,
+          lowStockThreshold: s.low_stock_threshold as number,
         };
       });
 
-      categories = categoryRecords.map((c: any) => ({
-        id: c.id,
-        name: c.name,
-        description: c.description || "",
-      }));
+      // Also include products with no stock record at any location.
+      const stockedProductIds = new Set(products.map((p) => p.id));
+      for (const p of productRecords) {
+        if (!stockedProductIds.has(p.id)) {
+          products.push({
+            id: p.id,
+            stockId: "",
+            name: p.name,
+            sku: p.sku || "",
+            barcode: p.barcode || "",
+            category: p.expand?.category?.name || "",
+            locationId: "",
+            locationName: "—",
+            sellingPrice: p.selling_price || 0,
+            quantity: 0,
+            lowStockThreshold: 0,
+          });
+        }
+      }
+
     } catch {
       errorMsg = "Failed to load stock data";
     } finally {
@@ -139,7 +152,13 @@
 
   // ── Form Helpers ───────────────────────────────────────────────────────────
   function resetForm() {
-    formData = { productId: "", quantity: "", note: "", type: "purchase" };
+    formData = {
+      productId: "",
+      locationId: "",
+      quantity: "",
+      note: "",
+      type: "purchase",
+    };
     showAddForm = false;
     errorMsg = "";
   }
@@ -153,6 +172,7 @@
         method: "POST",
         body: JSON.stringify({
           product_id: formData.productId,
+          location_id: formData.locationId,
           quantity: Number(formData.quantity),
           type: formData.type,
           note: formData.note || `${formData.type} entry`,
@@ -179,32 +199,6 @@
       errorMsg = e.message || "Failed to adjust stock";
     } finally {
       saving = false;
-    }
-  }
-
-  async function handleAddCategory(e: SubmitEvent) {
-    e.preventDefault();
-    savingCategory = true;
-    categoryError = "";
-    try {
-      const record = await pb.collection("categories").create({
-        name: categoryForm.name.trim(),
-        description: categoryForm.description.trim(),
-      });
-      categories = [
-        ...categories,
-        {
-          id: record.id,
-          name: record["name"],
-          description: record["description"] || "",
-        },
-      ].sort((a, b) => a.name.localeCompare(b.name));
-      categoryForm = { name: "", description: "" };
-      showCategoryForm = false;
-    } catch (e: any) {
-      categoryError = e.message || "Failed to add category";
-    } finally {
-      savingCategory = false;
     }
   }
 
@@ -238,6 +232,7 @@
   // ── Table columns ──────────────────────────────────────────────────────────
   const columns: any[] = [
     { header: "Product Name", accessor: "name" },
+    { header: "Location", accessor: "locationName" },
     { header: "Category", accessor: "category" },
     { header: "Barcode/SKU", accessor: "barcode" },
     { header: "Stock", accessor: "quantity" },
@@ -351,6 +346,27 @@
                 </select>
               </div>
 
+              <!-- Location Select -->
+              <div class="relative w-full mb-6">
+                <label
+                  class="block mb-2 text-sm text-muted-foreground"
+                  for="locationSelect"
+                >
+                  Location <span class="text-destructive">*</span>
+                </label>
+                <select
+                  id="locationSelect"
+                  bind:value={formData.locationId}
+                  class="w-full px-4 py-3 bg-input-background border border-border rounded-lg outline-none focus:ring-2 focus:ring-ring transition-all"
+                  required
+                >
+                  <option value="">Choose a location</option>
+                  {#each locations as loc}
+                    <option value={loc.id}>{loc.name} ({loc.type})</option>
+                  {/each}
+                </select>
+              </div>
+
               <!-- Type Select -->
               <div class="relative w-full mb-6">
                 <label
@@ -443,112 +459,6 @@
       </div>
     {/if}
 
-    <!-- Category Management Section -->
-    <Card class="mb-6 md:mb-8">
-      <div class="flex items-center justify-between mb-4">
-        <h3 class="text-lg md:text-xl flex items-center gap-2">
-          <Tag class="w-5 h-5 text-primary" />
-          Categories ({categories.length})
-        </h3>
-        <button
-          onclick={() => {
-            showCategoryForm = !showCategoryForm;
-            categoryError = "";
-            categoryForm = { name: "", description: "" };
-          }}
-          class="flex items-center gap-1.5 px-3 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:opacity-90 transition-opacity"
-        >
-          {#if showCategoryForm}
-            <X class="w-4 h-4" /> Cancel
-          {:else}
-            <Plus class="w-4 h-4" /> Add Category
-          {/if}
-        </button>
-      </div>
-
-      {#if showCategoryForm}
-        <div transition:slide={{ duration: 250 }} class="mb-4 overflow-hidden">
-          <form
-            onsubmit={handleAddCategory}
-            class="p-4 bg-muted rounded-lg space-y-3"
-          >
-            {#if categoryError}
-              <div
-                class="flex items-center gap-2 text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-lg px-3 py-2"
-              >
-                <AlertCircle class="w-4 h-4 shrink-0" />
-                {categoryError}
-              </div>
-            {/if}
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label
-                  class="block text-sm text-muted-foreground mb-1"
-                  for="catName"
-                >
-                  Category Name <span class="text-destructive">*</span>
-                </label>
-                <input
-                  id="catName"
-                  type="text"
-                  bind:value={categoryForm.name}
-                  placeholder="e.g. Saree, Shirt, Kurta…"
-                  required
-                  class="w-full px-3 py-2 bg-background border border-border rounded-lg outline-none focus:ring-2 focus:ring-ring text-sm transition-all"
-                />
-              </div>
-              <div>
-                <label
-                  class="block text-sm text-muted-foreground mb-1"
-                  for="catDesc">Description</label
-                >
-                <input
-                  id="catDesc"
-                  type="text"
-                  bind:value={categoryForm.description}
-                  placeholder="Optional description"
-                  class="w-full px-3 py-2 bg-background border border-border rounded-lg outline-none focus:ring-2 focus:ring-ring text-sm transition-all"
-                />
-              </div>
-            </div>
-            <div class="flex gap-2">
-              <button
-                type="submit"
-                disabled={savingCategory}
-                class="px-4 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:opacity-90 disabled:opacity-50 transition-opacity"
-              >
-                {savingCategory ? "Saving…" : "Save Category"}
-              </button>
-              <button
-                type="button"
-                onclick={() => (showCategoryForm = false)}
-                class="px-4 py-2 text-sm border border-border rounded-lg hover:bg-muted transition-colors"
-              >
-                Cancel
-              </button>
-            </div>
-          </form>
-        </div>
-      {/if}
-
-      {#if categories.length === 0}
-        <p class="text-sm text-muted-foreground py-4 text-center">
-          No categories yet. Add one above.
-        </p>
-      {:else}
-        <div class="flex flex-wrap gap-2">
-          {#each categories as cat (cat.id)}
-            <span
-              class="px-3 py-1.5 bg-primary/10 text-primary rounded-full text-sm font-medium"
-              title={cat.description || undefined}
-            >
-              {cat.name}
-            </span>
-          {/each}
-        </div>
-      {/if}
-    </Card>
-
     <!-- Current Stock Levels Table -->
     <Card class="mb-6 md:mb-8">
       <div
@@ -599,7 +509,11 @@
       {:else}
         <div class="overflow-x-auto">
           {#snippet cell(row: any, column: any)}
-            {#if column.header === "Category"}
+            {#if column.header === "Location"}
+              <span class="px-2 py-1 bg-blue-50 text-blue-700 rounded text-sm"
+                >{row.locationName}</span
+              >
+            {:else if column.header === "Category"}
               <span class="px-2 py-1 bg-muted rounded text-sm"
                 >{row.category}</span
               >

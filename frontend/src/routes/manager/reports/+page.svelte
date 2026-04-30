@@ -16,11 +16,13 @@
     Users,
   } from "lucide-svelte";
   import { fly } from "svelte/transition";
+  import { Store } from "lucide-svelte";
 
   const menuItems = [
     { label: "Dashboard", icon: LayoutDashboard, path: "/manager" },
     { label: "Sales Analysis", icon: TrendingUp, path: "/manager/sales" },
     { label: "Stock Analysis", icon: Package, path: "/manager/stock" },
+    { label: "Shop Overview", icon: Store, path: "/stats/overview" },
     { label: "Reports", icon: FileText, path: "/manager/reports" },
     { label: "Users", icon: Users, path: "/manager/users" },
   ];

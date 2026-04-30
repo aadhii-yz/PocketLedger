@@ -31,6 +31,7 @@
     ArcElement,
   } from "chart.js";
   import { Line, Bar, Pie } from "svelte-chartjs";
+  import { Store } from "lucide-svelte";
 
   Chart.register(
     Title,
@@ -48,6 +49,7 @@
     { label: "Dashboard", icon: LayoutDashboard, path: "/manager" },
     { label: "Sales Analysis", icon: TrendingUp, path: "/manager/sales" },
     { label: "Stock Analysis", icon: Package, path: "/manager/stock" },
+    { label: "Shop Overview", icon: Store, path: "/stats/overview" },
     { label: "Reports", icon: FileText, path: "/manager/reports" },
     { label: "Users", icon: Users, path: "/manager/users" },
   ];

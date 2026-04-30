@@ -19,14 +19,27 @@
     Search,
     X,
     AlertCircle,
+    Tag,
   } from "lucide-svelte";
   import { pb, customFetch } from "$lib/pb";
   import { onMount } from "svelte";
   import { slide } from "svelte/transition";
 
+  import {
+    ArrowLeftRight,
+    Store,
+    Warehouse,
+    TrendingUp,
+    Receipt,
+  } from "lucide-svelte";
+
   const menuItems = [
     { label: "Product Management", icon: ShoppingBag, path: "/stock/products" },
     { label: "Stock Management", icon: Package, path: "/stock/inventory" },
+    { label: "Warehouse", icon: Warehouse, path: "/stock/warehouse" },
+    { label: "Shop Stock", icon: Store, path: "/stock/shops" },
+    { label: "Transfers", icon: ArrowLeftRight, path: "/stock/transfers" },
+    { label: "Shop Stats", icon: TrendingUp, path: "/stats/overview" },
   ];
 
   interface Product {
@@ -44,6 +57,7 @@
   interface Category {
     id: string;
     name: string;
+    description: string;
   }
 
   let products = $state<Product[]>([]);
@@ -55,6 +69,11 @@
   let generatedBarcode = $state("");
   let searchQuery = $state("");
   let saving = $state(false);
+
+  let showCategoryForm = $state(false);
+  let categoryForm = $state({ name: "", description: "" });
+  let savingCategory = $state(false);
+  let categoryError = $state("");
 
   let formData = $state({
     name: "",
@@ -78,6 +97,7 @@
       const cats: Category[] = categoryRecords.map((c: any) => ({
         id: c.id,
         name: c.name,
+        description: c.description || "",
       }));
       categories = cats;
       products = productRecords.map((p: any) => ({
@@ -154,6 +174,32 @@
     alert(
       `Printing barcode: ${barcode}\nProduct: ${name}\n\nIn production, this would send to a barcode printer.`,
     );
+  }
+
+  async function handleAddCategory(e: SubmitEvent) {
+    e.preventDefault();
+    savingCategory = true;
+    categoryError = "";
+    try {
+      const record = await pb.collection("categories").create({
+        name: categoryForm.name.trim(),
+        description: categoryForm.description.trim(),
+      });
+      categories = [
+        ...categories,
+        {
+          id: record.id,
+          name: record["name"],
+          description: record["description"] || "",
+        },
+      ].sort((a, b) => a.name.localeCompare(b.name));
+      categoryForm = { name: "", description: "" };
+      showCategoryForm = false;
+    } catch (e: any) {
+      categoryError = e.message || "Failed to add category";
+    } finally {
+      savingCategory = false;
+    }
   }
 
   async function handleSubmit(e: SubmitEvent) {
@@ -387,6 +433,112 @@
         </Card>
       </div>
     {/if}
+
+    <!-- Category Management Section -->
+    <Card class="mb-6 md:mb-8">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="text-lg md:text-xl flex items-center gap-2">
+          <Tag class="w-5 h-5 text-primary" />
+          Categories ({categories.length})
+        </h3>
+        <button
+          onclick={() => {
+            showCategoryForm = !showCategoryForm;
+            categoryError = "";
+            categoryForm = { name: "", description: "" };
+          }}
+          class="flex items-center gap-1.5 px-3 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:opacity-90 transition-opacity"
+        >
+          {#if showCategoryForm}
+            <X class="w-4 h-4" /> Cancel
+          {:else}
+            <Plus class="w-4 h-4" /> Add Category
+          {/if}
+        </button>
+      </div>
+
+      {#if showCategoryForm}
+        <div transition:slide={{ duration: 250 }} class="mb-4 overflow-hidden">
+          <form
+            onsubmit={handleAddCategory}
+            class="p-4 bg-muted rounded-lg space-y-3"
+          >
+            {#if categoryError}
+              <div
+                class="flex items-center gap-2 text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-lg px-3 py-2"
+              >
+                <AlertCircle class="w-4 h-4 shrink-0" />
+                {categoryError}
+              </div>
+            {/if}
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label
+                  class="block text-sm text-muted-foreground mb-1"
+                  for="catName"
+                >
+                  Category Name <span class="text-destructive">*</span>
+                </label>
+                <input
+                  id="catName"
+                  type="text"
+                  bind:value={categoryForm.name}
+                  placeholder="e.g. Saree, Shirt, Kurta…"
+                  required
+                  class="w-full px-3 py-2 bg-background border border-border rounded-lg outline-none focus:ring-2 focus:ring-ring text-sm transition-all"
+                />
+              </div>
+              <div>
+                <label
+                  class="block text-sm text-muted-foreground mb-1"
+                  for="catDesc">Description</label
+                >
+                <input
+                  id="catDesc"
+                  type="text"
+                  bind:value={categoryForm.description}
+                  placeholder="Optional description"
+                  class="w-full px-3 py-2 bg-background border border-border rounded-lg outline-none focus:ring-2 focus:ring-ring text-sm transition-all"
+                />
+              </div>
+            </div>
+            <div class="flex gap-2">
+              <button
+                type="submit"
+                disabled={savingCategory}
+                class="px-4 py-2 text-sm bg-primary text-primary-foreground rounded-lg hover:opacity-90 disabled:opacity-50 transition-opacity"
+              >
+                {savingCategory ? "Saving…" : "Save Category"}
+              </button>
+              <button
+                type="button"
+                onclick={() => (showCategoryForm = false)}
+                class="px-4 py-2 text-sm border border-border rounded-lg hover:bg-muted transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        </div>
+      {/if}
+
+      {#if categories.length === 0}
+        <p class="text-sm text-muted-foreground py-4 text-center">
+          No categories yet. Add one above.
+        </p>
+      {:else}
+        <div class="flex flex-wrap gap-2">
+          {#each categories as cat (cat.id)}
+            <span
+              class="px-3 py-1.5 bg-primary/10 text-primary rounded-full text-sm font-medium"
+              title={cat.description || undefined}
+            >
+              {cat.name}
+            </span>
+          {/each}
+        </div>
+      {/if}
+    </Card>
 
     <!-- Products Table -->
     <Card>

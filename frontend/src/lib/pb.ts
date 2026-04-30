@@ -3,6 +3,13 @@
 
 import PocketBase from 'pocketbase';
 
+export interface AuthUser {
+  id: string;
+  email: string;
+  role: 'admin' | 'manager' | 'pos' | 'stock_entry';
+  assigned_shop: string;
+}
+
 const PB_URL = import.meta.env.VITE_PB_URL || 'http://localhost:8090';
 
 export const pb = new PocketBase(PB_URL);

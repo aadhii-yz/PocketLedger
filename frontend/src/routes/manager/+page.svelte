@@ -41,11 +41,13 @@
     CategoryScale,
     BarElement,
   );
+  import { Store } from "lucide-svelte";
 
   const menuItems = [
     { label: "Dashboard", icon: LayoutDashboard, path: "/manager" },
     { label: "Sales Analysis", icon: TrendingUp, path: "/manager/sales" },
     { label: "Stock Analysis", icon: Package, path: "/manager/stock" },
+    { label: "Shop Overview", icon: Store, path: "/stats/overview" },
     { label: "Reports", icon: FileText, path: "/manager/reports" },
     { label: "Users", icon: Users, path: "/manager/users" },
   ];
@@ -63,71 +65,94 @@
     payment_methods: Array<{ method: string; total: number; count: number }>;
   }
 
+  interface ShopOption {
+    id: string;
+    name: string;
+  }
+
   let stats = $state<DashboardStats | null>(null);
   let dailyData = $state<Array<{ date: string; sales: number }>>([]);
   let lowStock = $state<
     Array<{ id: string; name: string; category: string; currentStock: number }>
   >([]);
   let loading = $state(true);
+  let shops = $state<ShopOption[]>([]);
+  let selectedShopId = $state("");
 
-  onMount(() => {
-    async function loadData() {
-      try {
-        const [dashStats, billRecords, stockRecords] = await Promise.all([
-          customFetch("/stats/dashboard"),
-          pb.collection("bills").getList(1, 200, {
-            filter: `payment_status = 'paid'`,
-            sort: "-created",
-          }),
-          pb
-            .collection("stock")
-            .getFullList({ expand: "product,product.category" }),
-        ]);
+  async function fetchDashboardData() {
+    const shopParam = selectedShopId ? `?shop_id=${selectedShopId}` : "";
+    const stockFilter = selectedShopId ? `location = "${selectedShopId}"` : "";
+    const [dashStats, billFilter, stockRecords] = await Promise.all([
+      customFetch(`/stats/dashboard${shopParam}`),
+      pb.collection("bills").getList(1, 200, {
+        filter: selectedShopId
+          ? `payment_status = 'paid' && shop = "${selectedShopId}"`
+          : `payment_status = 'paid'`,
+        sort: "-created",
+      }),
+      pb.collection("stock").getFullList({
+        expand: "product,product.category",
+        filter: stockFilter,
+      }),
+    ]);
 
-        stats = dashStats;
+    stats = dashStats;
 
-        const dayMap: Record<string, number> = {};
-        const today = new Date();
-        for (let i = 6; i >= 0; i--) {
-          const d = new Date(today);
-          d.setDate(d.getDate() - i);
-          const key = d.toLocaleDateString("en-GB", {
-            day: "2-digit",
-            month: "short",
-          });
-          dayMap[key] = 0;
-        }
-        for (const bill of billRecords.items as any[]) {
-          const key = new Date(bill.created).toLocaleDateString("en-GB", {
-            day: "2-digit",
-            month: "short",
-          });
-          if (key in dayMap) dayMap[key] += bill.grand_total || 0;
-        }
-        dailyData = Object.entries(dayMap).map(([date, sales]) => ({
-          date,
-          sales,
-        }));
-
-        const low = (stockRecords as any[])
-          .filter(
-            (s) =>
-              s.low_stock_threshold > 0 && s.quantity <= s.low_stock_threshold,
-          )
-          .map((s) => ({
-            id: s.product,
-            name: s.expand?.product?.name || "Unknown",
-            category: s.expand?.product?.expand?.category?.name || "",
-            currentStock: s.quantity,
-          }));
-        lowStock = low;
-      } catch (e) {
-        console.error("Dashboard load failed", e);
-      } finally {
-        loading = false;
-      }
+    const dayMap: Record<string, number> = {};
+    const today = new Date();
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(d.getDate() - i);
+      const key = d.toLocaleDateString("en-GB", {
+        day: "2-digit",
+        month: "short",
+      });
+      dayMap[key] = 0;
     }
-    loadData();
+    for (const bill of billFilter.items as any[]) {
+      const key = new Date(bill.created).toLocaleDateString("en-GB", {
+        day: "2-digit",
+        month: "short",
+      });
+      if (key in dayMap) dayMap[key] += bill.grand_total || 0;
+    }
+    dailyData = Object.entries(dayMap).map(([date, sales]) => ({
+      date,
+      sales,
+    }));
+
+    lowStock = (stockRecords as any[])
+      .filter(
+        (s) => s.low_stock_threshold > 0 && s.quantity <= s.low_stock_threshold,
+      )
+      .map((s) => ({
+        id: s.product,
+        name: s.expand?.product?.name || "Unknown",
+        category: s.expand?.product?.expand?.category?.name || "",
+        currentStock: s.quantity,
+      }));
+  }
+
+  onMount(async () => {
+    try {
+      const shopRecords = await pb.collection("locations").getFullList({
+        filter: "type = 'shop' && is_active = true",
+        sort: "name",
+      });
+      shops = shopRecords.map((s: any) => ({ id: s.id, name: s.name }));
+      await fetchDashboardData();
+    } catch (e) {
+      console.error("Dashboard load failed", e);
+    } finally {
+      loading = false;
+    }
+  });
+
+  $effect(() => {
+    // Re-fetch whenever selected shop changes (after initial load).
+    if (!loading) {
+      fetchDashboardData().catch(console.error);
+    }
   });
 
   let topProductsChart = $derived(
@@ -177,11 +202,33 @@
     {#if loading}
       <LoadingSpinner />
     {:else}
-      <div class="mb-6 md:mb-8">
-        <h1 class="text-2xl md:text-3xl lg:text-4xl">Manager Dashboard</h1>
-        <p class="text-muted-foreground text-sm md:text-base">
-          Business insights and analytics
-        </p>
+      <div
+        class="mb-6 md:mb-8 flex flex-col sm:flex-row sm:items-end justify-between gap-4"
+      >
+        <div>
+          <h1 class="text-2xl md:text-3xl lg:text-4xl">Manager Dashboard</h1>
+          <p class="text-muted-foreground text-sm md:text-base">
+            Business insights and analytics
+          </p>
+        </div>
+        {#if shops.length > 0}
+          <div class="flex items-center gap-2">
+            <label
+              class="text-sm text-muted-foreground whitespace-nowrap"
+              for="shopFilter">Filter by shop:</label
+            >
+            <select
+              id="shopFilter"
+              bind:value={selectedShopId}
+              class="px-3 py-2 text-sm bg-input-background border border-border rounded-lg outline-none focus:ring-2 focus:ring-ring transition-all"
+            >
+              <option value="">All Shops</option>
+              {#each shops as shop}
+                <option value={shop.id}>{shop.name}</option>
+              {/each}
+            </select>
+          </div>
+        {/if}
       </div>
 
       <!-- Summary Cards -->

@@ -17,6 +17,7 @@
     AlertCircle,
     ChevronDown,
     X,
+    Store,
   } from "lucide-svelte";
   import { pb, customFetch } from "$lib/pb";
   import { onMount } from "svelte";
@@ -45,7 +46,7 @@
   let loadingProducts = $state(true);
   let searchTerm = $state("");
   let cart = $state<CartItem[]>([]);
-  let paymentMethod = $state<"cash" | "upi" | "card">("cash");
+  let paymentMethod = $state<"cash" | "upi" | "card" | "credit">("cash");
   let showReceipt = $state(false);
   let billNumber = $state("");
   let submitting = $state(false);
@@ -53,36 +54,87 @@
   let showProductPicker = $state(false);
   let pickerCategory = $state<string>("");
   let pickerRef = $state<HTMLElement | null>(null);
+  interface ShopOption { id: string; name: string; }
+
+  let userRole = $state("");
+  let assignedShop = $state("");
+  let shopName = $state("");
+  let shops = $state<ShopOption[]>([]);
+  let selectedShopId = $state("");
+  let online = $state(true);
+
+  $effect(() => {
+    online = navigator.onLine;
+    const setOnline = () => (online = true);
+    const setOffline = () => (online = false);
+    window.addEventListener('online', setOnline);
+    window.addEventListener('offline', setOffline);
+    return () => {
+      window.removeEventListener('online', setOnline);
+      window.removeEventListener('offline', setOffline);
+    };
+  });
+
+  async function loadStockForShop(shopId: string) {
+    loadingProducts = true;
+    products = [];
+    try {
+      const [productRecords, stockRecords, shopRecord] = await Promise.all([
+        pb.collection("products").getFullList({ expand: "category" }),
+        pb.collection("stock").getFullList({ filter: `location = "${shopId}"` }),
+        pb.collection("locations").getOne(shopId),
+      ]);
+      shopName = (shopRecord as any)?.name || "";
+      const stockMap = new Map(
+        stockRecords.map((s: any) => [s.product, s.quantity as number]),
+      );
+      products = productRecords.map((p: any) => ({
+        id: p.id,
+        name: p.name,
+        sku: p.sku || "",
+        barcode: p.barcode || "",
+        category: p.expand?.category?.name || "Uncategorized",
+        price: p.selling_price || 0,
+        costPrice: p.cost_price || 0,
+        taxRate: p.tax_rate || 0,
+        quantity: stockMap.get(p.id) || 0,
+      }));
+    } catch (e) {
+      console.error("Failed to load products", e);
+    } finally {
+      loadingProducts = false;
+    }
+  }
 
   onMount(() => {
-    async function loadProducts() {
-      try {
-        const [productRecords, stockRecords] = await Promise.all([
-          pb.collection("products").getFullList({ expand: "category" }),
-          pb.collection("stock").getFullList(),
-        ]);
-        const stockMap = new Map(
-          stockRecords.map((s: any) => [s.product, s.quantity as number]),
-        );
-        const mapped: Product[] = productRecords.map((p: any) => ({
-          id: p.id,
-          name: p.name,
-          sku: p.sku || "",
-          barcode: p.barcode || "",
-          category: p.expand?.category?.name || "Uncategorized",
-          price: p.selling_price || 0,
-          costPrice: p.cost_price || 0,
-          taxRate: p.tax_rate || 0,
-          quantity: stockMap.get(p.id) || 0,
-        }));
-        products = mapped;
-      } catch (e) {
-        console.error("Failed to load products", e);
-      } finally {
+    async function init() {
+      const user = pb.authStore.record as any;
+      userRole = user?.role || "";
+
+      if (userRole === "pos") {
+        assignedShop = user?.assigned_shop || "";
+        if (!assignedShop) {
+          errorMsg = "No shop assigned to your account. Contact an admin.";
+          loadingProducts = false;
+          return;
+        }
+        selectedShopId = assignedShop;
+        await loadStockForShop(assignedShop);
+      } else {
+        // manager / stock_entry — load all shops and let them pick
+        try {
+          const shopRecords = await pb.collection("locations").getFullList({
+            filter: "type = 'shop' && is_active = true",
+            sort: "name",
+          });
+          shops = shopRecords.map((s: any) => ({ id: s.id, name: s.name }));
+        } catch (e) {
+          console.error("Failed to load shops", e);
+        }
         loadingProducts = false;
       }
     }
-    loadProducts();
+    init();
   });
 
   function handleOutsideClick(e: MouseEvent) {
@@ -153,12 +205,20 @@
     }, 0),
   );
 
+  async function handleShopChange(shopId: string) {
+    selectedShopId = shopId;
+    cart = [];
+    errorMsg = "";
+    if (shopId) await loadStockForShop(shopId);
+  }
+
   async function handleGenerateBill() {
     if (cart.length === 0) return;
     submitting = true;
     errorMsg = "";
     try {
       const payload = {
+        shop_id: selectedShopId,
         customer_name: "",
         customer_phone: "",
         items: cart.map((item) => ({
@@ -197,7 +257,7 @@
     }
   }
 
-  function setPaymentMethodMode(method: "cash" | "upi" | "card") {
+  function setPaymentMethodMode(method: "cash" | "upi" | "card" | "credit") {
     paymentMethod = method;
   }
 </script>
@@ -214,9 +274,31 @@
     <div class="mb-4">
       <h1 class="text-2xl md:text-3xl lg:text-4xl">Point of Sale</h1>
       <p class="text-muted-foreground text-sm md:text-base">
-        Fast and easy billing
+        {shopName ? `Shop: ${shopName}` : "Fast and easy billing"}
       </p>
     </div>
+
+    {#if userRole !== "pos" && shops.length > 0}
+      <Card class="mb-4">
+        <div class="flex items-center gap-3">
+          <Store class="w-5 h-5 text-primary shrink-0" />
+          <div class="flex-1">
+            <label for="shopSelect" class="block text-xs text-muted-foreground mb-1">Select Shop to Bill From</label>
+            <select
+              id="shopSelect"
+              value={selectedShopId}
+              onchange={(e) => handleShopChange((e.target as HTMLSelectElement).value)}
+              class="w-full px-3 py-2 bg-input-background border border-border rounded-lg outline-none focus:ring-2 focus:ring-ring text-sm"
+            >
+              <option value="">— Choose a shop —</option>
+              {#each shops as shop}
+                <option value={shop.id}>{shop.name}</option>
+              {/each}
+            </select>
+          </div>
+        </div>
+      </Card>
+    {/if}
 
     <!-- Search Bar + Browse Button -->
     <Card class="mb-4">
@@ -237,9 +319,11 @@
             type="text"
             placeholder={loadingProducts
               ? "Loading products…"
-              : "Search by product name, SKU or scan barcode…"}
+              : !selectedShopId
+                ? "Select a shop first…"
+                : "Search by product name, SKU or scan barcode…"}
             bind:value={searchTerm}
-            disabled={loadingProducts}
+            disabled={loadingProducts || !selectedShopId}
             class="w-full pl-12 pr-14 py-4 text-lg bg-input-background border-2 border-border rounded-xl outline-none focus:ring-2 focus:ring-ring focus:border-primary transition-all shadow-sm disabled:opacity-50"
           />
         </div>
@@ -250,7 +334,7 @@
             showProductPicker = !showProductPicker;
             pickerCategory = "";
           }}
-          disabled={loadingProducts}
+          disabled={loadingProducts || !selectedShopId}
           class="flex items-center gap-2 px-4 py-4 bg-primary text-primary-foreground rounded-xl font-medium whitespace-nowrap hover:opacity-90 transition-opacity disabled:opacity-50"
         >
           Browse <ChevronDown
@@ -484,7 +568,7 @@
           <p class="text-sm font-medium mb-3 text-muted-foreground">
             Payment Method
           </p>
-          <div class="grid grid-cols-3 gap-3">
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <button
               onclick={() => setPaymentMethodMode("cash")}
               class="p-4 rounded-xl border-2 transition-all {paymentMethod ===
@@ -515,8 +599,27 @@
               <CreditCard class="w-8 h-8 mx-auto mb-2" />
               <p class="font-medium">Card</p>
             </button>
+            <button
+              onclick={() => setPaymentMethodMode("credit")}
+              class="p-4 rounded-xl border-2 transition-all {paymentMethod ===
+              'credit'
+                ? 'border-primary bg-primary text-primary-foreground shadow-lg'
+                : 'border-border hover:border-primary/50 hover:shadow-md'}"
+            >
+              <Receipt class="w-8 h-8 mx-auto mb-2" />
+              <p class="font-medium">Credit</p>
+            </button>
           </div>
         </div>
+
+        {#if !online}
+          <div
+            class="flex items-center gap-2 p-3 bg-yellow-50 border border-yellow-300 rounded-lg text-yellow-800 text-sm"
+          >
+            <AlertCircle class="w-4 h-4 shrink-0" />
+            You are offline. Reconnect to process transactions.
+          </div>
+        {/if}
 
         {#if errorMsg}
           <div
@@ -529,7 +632,7 @@
 
         <Button
           onclick={handleGenerateBill}
-          disabled={cart.length === 0 || submitting}
+          disabled={cart.length === 0 || submitting || !selectedShopId || !online}
           class="w-full py-4 text-lg font-semibold flex justify-center gap-2"
         >
           {#if submitting}

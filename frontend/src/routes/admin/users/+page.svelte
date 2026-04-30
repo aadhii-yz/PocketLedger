@@ -32,11 +32,19 @@
     email: string;
     role: "admin" | "manager" | "pos" | "stock_entry";
     fullName: string;
+    assignedShop: string;
+    assignedShopName: string;
     isActive: boolean;
     createdAt: string;
   }
 
+  interface Shop {
+    id: string;
+    name: string;
+  }
+
   let users = $state<SystemUser[]>([]);
+  let shops = $state<Shop[]>([]);
   let loading = $state(true);
   let showAddForm = $state(false);
   let editingUser = $state<SystemUser | null>(null);
@@ -48,19 +56,25 @@
     fullName: "",
     role: "pos" as SystemUser["role"],
     password: "",
+    assignedShop: "",
   });
 
   async function loadUsers() {
     try {
       loading = true;
-      const records = await pb
-        .collection("users")
-        .getFullList({ sort: "created" });
+      const [records, shopRecords] = await Promise.all([
+        pb.collection("users").getFullList({ sort: "created" }),
+        pb.collection("locations").getFullList({ filter: "type = 'shop'", sort: "name" }),
+      ]);
+      shops = shopRecords.map((s: any) => ({ id: s.id, name: s.name }));
+      const shopMap = new Map(shops.map((s) => [s.id, s.name]));
       users = records.map((r: any) => ({
         id: r.id,
         email: r.email || "",
         role: r.role || "pos",
         fullName: r.name || "",
+        assignedShop: r.assigned_shop || "",
+        assignedShopName: shopMap.get(r.assigned_shop) || "—",
         isActive: r.verified !== false,
         createdAt: r.created ? r.created.split(" ")[0] : "",
       }));
@@ -81,6 +95,7 @@
       fullName: "",
       role: "pos",
       password: "",
+      assignedShop: "",
     };
     editingUser = null;
     showAddForm = false;
@@ -92,11 +107,13 @@
     saving = true;
     errorMsg = "";
     try {
+      const needsShop = formData.role === "pos" || formData.role === "stock_entry";
       if (editingUser) {
         const data: any = {
           email: formData.email,
           name: formData.fullName,
           role: formData.role,
+          assigned_shop: needsShop ? formData.assignedShop || null : null,
         };
         if (formData.password) {
           data.password = formData.password;
@@ -108,6 +125,7 @@
           email: formData.email,
           name: formData.fullName,
           role: formData.role,
+          assigned_shop: needsShop ? formData.assignedShop || null : null,
           password: formData.password,
           passwordConfirm: formData.password,
         });
@@ -128,6 +146,7 @@
       fullName: user.fullName,
       role: user.role,
       password: "",
+      assignedShop: user.assignedShop,
     };
     showAddForm = true;
   }
@@ -153,6 +172,7 @@
     { header: "Full Name", accessor: "fullName" },
     { header: "Email", accessor: "email" },
     { header: "Role", accessor: "role" },
+    { header: "Assigned Shop", accessor: "assignedShopName" },
     { header: "Created", accessor: "createdAt" },
     { header: "Actions" },
   ];
@@ -237,6 +257,24 @@
                   <option value="stock_entry">Stock Entry</option>
                 </select>
               </div>
+
+              {#if formData.role === 'pos' || formData.role === 'stock_entry'}
+                <div class="relative w-full">
+                  <label class="block mb-2 text-muted-foreground" for="shopSelect">
+                    Assigned Shop
+                  </label>
+                  <select
+                    id="shopSelect"
+                    bind:value={formData.assignedShop}
+                    class="w-full px-4 py-3 bg-input-background border border-border rounded-lg outline-none focus:ring-2 focus:ring-ring transition-all"
+                  >
+                    <option value="">-- None --</option>
+                    {#each shops as shop}
+                      <option value={shop.id}>{shop.name}</option>
+                    {/each}
+                  </select>
+                </div>
+              {/if}
 
               <Input
                 label={editingUser
