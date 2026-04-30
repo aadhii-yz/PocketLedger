@@ -30,7 +30,6 @@
     { label: "Warehouse", icon: Warehouse, path: "/stock/warehouse" },
     { label: "Shop Stock", icon: Store, path: "/stock/shops" },
     { label: "Transfers", icon: ArrowLeftRight, path: "/stock/transfers" },
-    { label: "Shop Stats", icon: TrendingUp, path: "/stats/overview" },
   ];
 
   interface Location {
@@ -84,14 +83,15 @@
   async function loadData() {
     try {
       loading = true;
-      const [productRecords, stockRecords, locationRecords] =
-        await Promise.all([
+      const [productRecords, stockRecords, locationRecords] = await Promise.all(
+        [
           pb
             .collection("products")
             .getFullList({ expand: "category", sort: "name" }),
           pb.collection("stock").getFullList({ expand: "product,location" }),
           pb.collection("locations").getFullList({ sort: "name" }),
-        ]);
+        ],
+      );
 
       locations = locationRecords.map((l: any) => ({
         id: l.id,
@@ -138,7 +138,6 @@
           });
         }
       }
-
     } catch {
       errorMsg = "Failed to load stock data";
     } finally {
@@ -234,7 +233,7 @@
     { header: "Product Name", accessor: "name" },
     { header: "Location", accessor: "locationName" },
     { header: "Category", accessor: "category" },
-    { header: "Barcode/SKU", accessor: "barcode" },
+    { header: "SKU", accessor: "sku" },
     { header: "Stock", accessor: "quantity" },
     { header: "Price", accessor: "sellingPrice" },
   ];
@@ -517,8 +516,8 @@
               <span class="px-2 py-1 bg-muted rounded text-sm"
                 >{row.category}</span
               >
-            {:else if column.header === "Barcode/SKU"}
-              <span class="font-mono text-sm">{row.barcode || row.sku}</span>
+            {:else if column.header === "SKU"}
+              <span class="font-mono text-sm">{row.sku}</span>
             {:else if column.header === "Stock"}
               <div class="flex items-center gap-2">
                 <span

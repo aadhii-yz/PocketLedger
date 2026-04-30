@@ -30,7 +30,6 @@
     { label: "Warehouse", icon: Warehouse, path: "/stock/warehouse" },
     { label: "Shop Stock", icon: Store, path: "/stock/shops" },
     { label: "Transfers", icon: ArrowLeftRight, path: "/stock/transfers" },
-    { label: "Shop Stats", icon: TrendingUp, path: "/stats/overview" },
   ];
 
   interface Location {

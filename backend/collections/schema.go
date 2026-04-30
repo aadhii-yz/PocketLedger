@@ -1,6 +1,8 @@
 package collections
 
 import (
+	"strings"
+
 	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 )
@@ -113,33 +115,62 @@ func ensureCategories(app core.App) error {
 }
 
 func ensureProducts(app core.App) error {
-	if _, err := app.FindCollectionByNameOrId("products"); err == nil {
+	editRole := "@request.auth.role = 'admin' || @request.auth.role = 'manager' || @request.auth.role = 'stock_entry'"
+	col, err := app.FindCollectionByNameOrId("products")
+	if err != nil {
+		// Fresh install.
+		col = core.NewBaseCollection("products")
+		col.ListRule = new("@request.auth.id != ''")
+		col.ViewRule = new("@request.auth.id != ''")
+		col.CreateRule = new(editRole)
+		col.UpdateRule = new(editRole)
+		col.DeleteRule = new("@request.auth.role = 'admin' || @request.auth.role = 'manager'")
+		col.Fields.Add(&core.TextField{Name: "name", Required: true})
+		col.Fields.Add(&core.TextField{Name: "sku", Required: true})
+		col.Fields.Add(&core.TextField{Name: "barcode"})
+		col.Fields.Add(&core.RelationField{
+			Name:         "category",
+			CollectionId: colId(app, "categories"),
+			MaxSelect:    1,
+		})
+		col.Fields.Add(&core.SelectField{
+			Name:      "unit",
+			MaxSelect: 1,
+			Values:    []string{"piece", "kg", "litre", "box"},
+		})
+		col.Fields.Add(&core.NumberField{Name: "cost_price", Required: true})
+		col.Fields.Add(&core.NumberField{Name: "selling_price", Required: true})
+		col.Fields.Add(&core.NumberField{Name: "tax_rate"})
+		col.Fields.Add(&core.FileField{Name: "image", MaxSelect: 1, MaxSize: 5242880})
+		col.Indexes = append(col.Indexes,
+			"CREATE UNIQUE INDEX idx_products_sku ON {{products}} (sku)",
+			"CREATE UNIQUE INDEX idx_products_barcode ON {{products}} (barcode) WHERE barcode != ''",
+		)
+		return app.Save(col)
+	}
+
+	// Upgrade path — add unique indexes if missing.
+	changed := false
+	hasSKUIdx, hasBarcodeIdx := false, false
+	for _, idx := range col.Indexes {
+		if strings.Contains(idx, "idx_products_sku") {
+			hasSKUIdx = true
+		}
+		if strings.Contains(idx, "idx_products_barcode") {
+			hasBarcodeIdx = true
+		}
+	}
+	if !hasSKUIdx {
+		col.Indexes = append(col.Indexes, "CREATE UNIQUE INDEX idx_products_sku ON {{products}} (sku)")
+		changed = true
+	}
+	if !hasBarcodeIdx {
+		col.Indexes = append(col.Indexes, "CREATE UNIQUE INDEX idx_products_barcode ON {{products}} (barcode) WHERE barcode != ''")
+		changed = true
+	}
+	if !changed {
 		return nil
 	}
-	editRole := "@request.auth.role = 'admin' || @request.auth.role = 'manager' || @request.auth.role = 'stock_entry'"
-	col := core.NewBaseCollection("products")
-	col.ListRule = new("@request.auth.id != ''")
-	col.ViewRule = new("@request.auth.id != ''")
-	col.CreateRule = new(editRole)
-	col.UpdateRule = new(editRole)
-	col.DeleteRule = new("@request.auth.role = 'admin' || @request.auth.role = 'manager'")
-	col.Fields.Add(&core.TextField{Name: "name", Required: true})
-	col.Fields.Add(&core.TextField{Name: "sku", Required: true})
-	col.Fields.Add(&core.TextField{Name: "barcode"})
-	col.Fields.Add(&core.RelationField{
-		Name:         "category",
-		CollectionId: colId(app, "categories"),
-		MaxSelect:    1,
-	})
-	col.Fields.Add(&core.SelectField{
-		Name:      "unit",
-		MaxSelect: 1,
-		Values:    []string{"piece", "kg", "litre", "box"},
-	})
-	col.Fields.Add(&core.NumberField{Name: "cost_price", Required: true})
-	col.Fields.Add(&core.NumberField{Name: "selling_price", Required: true})
-	col.Fields.Add(&core.NumberField{Name: "tax_rate"})
-	col.Fields.Add(&core.FileField{Name: "image", MaxSelect: 1, MaxSize: 5242880})
 	return app.Save(col)
 }
 

@@ -43,7 +43,11 @@ func GenerateBarcode(app core.App) func(*core.RequestEvent) error {
 		}
 		barcodeValue := body.Value
 		if barcodeValue == "" {
-			barcodeValue = fmt.Sprintf("INV%s", product.GetString("sku"))
+			var maxBarcode int
+			if err := app.DB().NewQuery("SELECT COALESCE(MAX(CAST(barcode AS INTEGER)), 0) FROM products WHERE barcode != ''").Row(&maxBarcode); err != nil {
+				return e.JSON(http.StatusInternalServerError, map[string]string{"message": "failed to get max barcode"})
+			}
+			barcodeValue = fmt.Sprintf("%010d", maxBarcode+1)
 		}
 		product.Set("barcode", barcodeValue)
 		if err := app.Save(product); err != nil {

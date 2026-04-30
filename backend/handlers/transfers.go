@@ -107,6 +107,28 @@ func CreateTransfer(app core.App) func(*core.RequestEvent) error {
 		var transferId, transferNumber string
 
 		err := app.RunInTransaction(func(txApp core.App) error {
+			// Validate stock availability before creating any records.
+			for _, item := range req.Items {
+				product, err := txApp.FindRecordById("products", item.ProductID)
+				if err != nil {
+					return fmt.Errorf("product %s not found", item.ProductID)
+				}
+				fromStock, err := txApp.FindRecordsByFilter(
+					"stock",
+					"product = {:product} && location = {:location}",
+					"", 1, 0,
+					dbx.Params{"product": item.ProductID, "location": req.FromLocation},
+				)
+				if err != nil || len(fromStock) == 0 {
+					return fmt.Errorf("no stock record for %q at source location — add stock first", product.GetString("name"))
+				}
+				available := fromStock[0].GetFloat("quantity")
+				if available < item.Quantity {
+					return fmt.Errorf("insufficient stock for %q at source (available: %.2f, requested: %.2f)",
+						product.GetString("name"), available, item.Quantity)
+				}
+			}
+
 			num, err := services.NextTransferNumber(txApp)
 			if err != nil {
 				return err
