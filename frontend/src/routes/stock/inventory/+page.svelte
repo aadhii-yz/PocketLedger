@@ -18,6 +18,7 @@
     X,
     AlertCircle,
   } from "lucide-svelte";
+  import BarcodeScanner from "$lib/components/BarcodeScanner.svelte";
   import { pb, customFetch } from "$lib/pb";
   import { onMount } from "svelte";
   import { slide } from "svelte/transition";
@@ -66,6 +67,10 @@
   let stockEntries = $state<StockEntry[]>([]);
   let showAddForm = $state(false);
   let searchQuery = $state("");
+  let searchInputEl = $state<HTMLInputElement | null>(null);
+  let productSearch = $state("");
+  let productSearchInputEl = $state<HTMLInputElement | null>(null);
+  let showProductDropdown = $state(false);
   let saving = $state(false);
   let errorMsg = $state("");
 
@@ -158,12 +163,15 @@
       note: "",
       type: "purchase",
     };
+    productSearch = "";
+    showProductDropdown = false;
     showAddForm = false;
     errorMsg = "";
   }
 
   async function handleSubmit(e: SubmitEvent) {
     e.preventDefault();
+    if (!formData.productId) { errorMsg = "Please select a product."; return; }
     saving = true;
     errorMsg = "";
     try {
@@ -212,6 +220,69 @@
     ).length,
   );
 
+  let uniqueProducts = $derived.by(() => {
+    const seen = new Set<string>();
+    return products.filter((p) => {
+      if (seen.has(p.id)) return false;
+      seen.add(p.id);
+      return true;
+    });
+  });
+
+  let filteredProductOptions = $derived.by(() => {
+    const q = productSearch.trim().toLowerCase();
+    if (!q) return [];
+    return uniqueProducts.filter(
+      (p) =>
+        p.name.toLowerCase().includes(q) ||
+        p.sku.toLowerCase().includes(q) ||
+        p.barcode.toLowerCase().includes(q),
+    );
+  });
+
+  function selectProduct(p: { id: string; name: string; sku: string; barcode: string }) {
+    formData.productId = p.id;
+    productSearch = p.name;
+    showProductDropdown = false;
+  }
+
+  function handleProductSearchKeydown(e: KeyboardEvent) {
+    if (e.key === "Escape") { showProductDropdown = false; return; }
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    const q = productSearch.trim();
+    if (!q) return;
+    const exact = uniqueProducts.find((p) => p.barcode === q || p.sku === q);
+    if (exact) { selectProduct(exact); return; }
+    if (filteredProductOptions.length === 1) selectProduct(filteredProductOptions[0]);
+  }
+
+  function handleWindowKeydown(e: KeyboardEvent) {
+    const target = e.target as HTMLElement;
+    const isInputFocused =
+      target.tagName === "INPUT" ||
+      target.tagName === "TEXTAREA" ||
+      target.tagName === "SELECT";
+    if (
+      !isInputFocused &&
+      e.key.length === 1 &&
+      !e.ctrlKey &&
+      !e.metaKey &&
+      !e.altKey &&
+      !loading
+    ) {
+      e.preventDefault();
+      if (showAddForm && !formData.productId && productSearchInputEl) {
+        productSearch += e.key;
+        showProductDropdown = true;
+        productSearchInputEl.focus();
+      } else if (searchInputEl) {
+        searchQuery += e.key;
+        searchInputEl.focus();
+      }
+    }
+  }
+
   let filteredProducts = $derived.by(() => {
     const q = searchQuery.trim().toLowerCase();
     if (!q) return products;
@@ -228,6 +299,16 @@
     products.find((p) => p.id === formData.productId),
   );
 
+  function handleBarcodeScan(barcode: string) {
+    const exact = uniqueProducts.find((p) => p.barcode === barcode || p.sku === barcode);
+    if (exact) {
+      selectProduct(exact);
+    } else {
+      productSearch = barcode;
+      showProductDropdown = true;
+    }
+  }
+
   // ── Table columns ──────────────────────────────────────────────────────────
   const columns: any[] = [
     { header: "Product Name", accessor: "name" },
@@ -238,6 +319,8 @@
     { header: "Price", accessor: "sellingPrice" },
   ];
 </script>
+
+<svelte:window onkeydown={handleWindowKeydown} />
 
 <svelte:head>
   <title>Stock Management - My Garments</title>
@@ -325,24 +408,58 @@
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
               <!-- Product Select -->
               <div class="relative w-full mb-6">
-                <label
-                  class="block mb-2 text-sm text-muted-foreground"
-                  for="productSelect"
-                >
+                <label class="block mb-2 text-sm text-muted-foreground" for="productSelect">
                   Select Product <span class="text-destructive">*</span>
                 </label>
-                <select
-                  id="productSelect"
-                  bind:value={formData.productId}
-                  class="w-full px-4 py-3 bg-input-background border border-border rounded-lg outline-none focus:ring-2 focus:ring-ring transition-all"
-                  required
-                >
-                  <option value="">Choose a product</option>
-                  {#each products as p}
-                    <option value={p.id}>{p.name} ({p.barcode || p.sku})</option
+                {#if formData.productId}
+                  <div class="flex items-center gap-2 px-4 py-3 bg-input-background border border-border rounded-lg">
+                    <span class="flex-1 text-sm font-medium truncate">{productSearch}</span>
+                    <button
+                      type="button"
+                      onclick={() => { formData.productId = ""; productSearch = ""; setTimeout(() => productSearchInputEl?.focus(), 50); }}
+                      class="text-muted-foreground hover:text-foreground transition-colors shrink-0"
+                      aria-label="Clear product"
                     >
-                  {/each}
-                </select>
+                      <X class="w-4 h-4" />
+                    </button>
+                  </div>
+                {:else}
+                  <div class="flex gap-2 items-center">
+                    <div class="relative flex-1">
+                      <Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+                      <input
+                        id="productSelect"
+                        type="text"
+                        bind:value={productSearch}
+                        bind:this={productSearchInputEl}
+                        onkeydown={handleProductSearchKeydown}
+                        oninput={() => (showProductDropdown = true)}
+                        onfocus={() => { if (productSearch.trim()) showProductDropdown = true; }}
+                        onblur={() => setTimeout(() => (showProductDropdown = false), 150)}
+                        placeholder="Search by name, SKU or scan barcode…"
+                        class="w-full pl-9 pr-4 py-3 bg-input-background border border-border rounded-lg outline-none focus:ring-2 focus:ring-ring transition-all text-sm"
+                      />
+                      {#if showProductDropdown && filteredProductOptions.length > 0}
+                        <div class="absolute z-20 top-full left-0 right-0 mt-1 max-h-48 overflow-y-auto bg-background border border-border rounded-lg shadow-lg">
+                          {#each filteredProductOptions.slice(0, 20) as p (p.id)}
+                            <button
+                              type="button"
+                              onmousedown={() => selectProduct(p)}
+                              class="w-full text-left px-4 py-2.5 text-sm hover:bg-muted transition-colors border-b border-border last:border-0"
+                            >
+                              <span class="font-medium">{p.name}</span>
+                              <span class="text-xs text-muted-foreground ml-2">{p.sku}{p.sku && p.barcode ? " • " : ""}{p.barcode}</span>
+                            </button>
+                          {/each}
+                        </div>
+                      {/if}
+                    </div>
+                    <BarcodeScanner
+                      onScan={handleBarcodeScan}
+                      class="p-3 bg-muted border border-border rounded-lg hover:bg-primary/10 hover:border-primary transition-colors"
+                    />
+                  </div>
+                {/if}
               </div>
 
               <!-- Location Select -->
@@ -480,6 +597,7 @@
           <input
             type="text"
             bind:value={searchQuery}
+            bind:this={searchInputEl}
             placeholder="Search by product name…"
             class="w-full pl-9 pr-9 py-2 text-sm border border-border rounded-full bg-muted/40 outline-none focus:ring-2 focus:ring-ring transition-all"
           />

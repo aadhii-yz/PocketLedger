@@ -60,7 +60,7 @@ Built on [PocketBase](https://pocketbase.io/) (v0.37). PocketBase provides the S
 |---|---|---|
 | GET | `/barcode/{productId}` | all |
 | POST | `/barcode/generate` | admin, manager, stock_entry |
-| POST | `/bills/create` | admin, manager, pos, stock_entry |
+| POST | `/bills/create` | admin, manager, pos |
 | GET | `/locations` | all |
 | POST | `/locations` | admin, manager |
 | PATCH | `/locations/{id}` | admin, manager |
@@ -82,8 +82,8 @@ SvelteKit app in **static adapter mode** (prerendered, `fallback: index.html` fo
 
 **Key files:**
 - `src/lib/pb.ts` — PocketBase client singleton, `customFetch` helper for `/api/custom/*` calls (injects auth token), and `mapRole` (PocketBase role → frontend role).
-- `src/routes/+page.svelte` — login page; redirects to role-specific dashboard after auth.
-- Routes are organized by role: `/admin`, `/manager`, `/billing`, `/stock`, `/stats`.
+- `src/routes/+page.svelte` — login page; on success calls `mapRole` and `goto`s to the role dashboard.
+- Routes are organized by role: `/admin` (logs, users), `/manager` (reports, sales, stock, users), `/billing` (history), `/stock` (inventory, products, shops, transfers, warehouse), `/stats` (overview, [shopId]).
 - `src/lib/components/` — shared UI primitives (Button, Card, DataTable, etc.).
 - `src/lib/index.ts` — barrel export for components.
 
@@ -107,6 +107,8 @@ SvelteKit app in **static adapter mode** (prerendered, `fallback: index.html` fo
 - `stock` collection → `NetworkOnly` (quantities must be live to prevent overselling at POS)
 - `/api/custom/*` → `NetworkOnly` (billing writes, transfers, stats — stale financial data is misleading)
 - The billing page (`/billing`) disables checkout when offline; `OfflineIndicator.svelte` shows a fixed-bottom banner on all routes via the root layout.
+
+**Camera barcode scanning (`BarcodeScanner.svelte`):** Renders a camera button only on touch devices (`navigator.maxTouchPoints > 0`). On tap, opens a full-screen camera modal. Uses the native `BarcodeDetector` API on Android (zero extra JS); falls back to dynamically imported `@zxing/browser` on iOS (lazy-loaded only on first use). Integrated in billing, stock inventory, and stock transfers pages. `@zxing/browser` requires `@zxing/library` as a peer dep — both must be installed explicitly (`npm install @zxing/browser @zxing/library`), since npm does not auto-install peer deps. Camera access requires HTTPS or `localhost`; plain HTTP on a local IP will be blocked by Android Chrome.
 
 ### Data model summary
 

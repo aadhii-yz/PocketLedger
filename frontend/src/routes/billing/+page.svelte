@@ -6,7 +6,6 @@
   import {
     Receipt,
     History,
-    Barcode,
     Plus,
     Minus,
     Trash2,
@@ -20,6 +19,7 @@
     X,
     Store,
   } from "lucide-svelte";
+  import BarcodeScanner from "$lib/components/BarcodeScanner.svelte";
   import { pb, customFetch } from "$lib/pb";
   import { onMount } from "svelte";
   import { slide, fade } from "svelte/transition";
@@ -58,6 +58,7 @@
   let showProductPicker = $state(false);
   let pickerCategory = $state<string>("");
   let pickerRef = $state<HTMLElement | null>(null);
+  let searchInputEl = $state<HTMLInputElement | null>(null);
   interface ShopOption { id: string; name: string; }
 
   let userRole = $state("");
@@ -107,6 +108,7 @@
       console.error("Failed to load products", e);
     } finally {
       loadingProducts = false;
+      setTimeout(() => searchInputEl?.focus(), 50);
     }
   }
 
@@ -185,6 +187,54 @@
     }
     searchTerm = "";
     errorMsg = "";
+    searchInputEl?.focus();
+  }
+
+  function handleSearchKeydown(e: KeyboardEvent) {
+    if (e.key !== "Enter" || !searchTerm || loadingProducts || !selectedShopId)
+      return;
+    const exactMatch = products.find(
+      (p) => p.barcode === searchTerm || p.sku === searchTerm,
+    );
+    if (exactMatch) {
+      if (exactMatch.quantity > 0) {
+        addToCart(exactMatch);
+      } else {
+        errorMsg = `"${exactMatch.name}" is out of stock`;
+        setTimeout(() => (errorMsg = ""), 3000);
+      }
+      return;
+    }
+    if (filteredProducts.length === 1) {
+      if (filteredProducts[0].quantity > 0) {
+        addToCart(filteredProducts[0]);
+      } else {
+        errorMsg = `"${filteredProducts[0].name}" is out of stock`;
+        setTimeout(() => (errorMsg = ""), 3000);
+      }
+    }
+  }
+
+  function handleWindowKeydown(e: KeyboardEvent) {
+    const target = e.target as HTMLElement;
+    const isInputFocused =
+      target.tagName === "INPUT" ||
+      target.tagName === "TEXTAREA" ||
+      target.tagName === "SELECT";
+    if (
+      !isInputFocused &&
+      e.key.length === 1 &&
+      !e.ctrlKey &&
+      !e.metaKey &&
+      !e.altKey &&
+      selectedShopId &&
+      !loadingProducts &&
+      searchInputEl
+    ) {
+      e.preventDefault();
+      searchTerm += e.key;
+      searchInputEl.focus();
+    }
   }
 
   function updateQuantity(productId: string, delta: number) {
@@ -253,6 +303,7 @@
         cart = [];
         paymentMethod = "cash";
         billNumber = "";
+        searchInputEl?.focus();
       }, 4000);
     } catch (e: any) {
       errorMsg = e.message || "Failed to create bill";
@@ -264,9 +315,23 @@
   function setPaymentMethodMode(method: "cash" | "upi" | "card" | "credit") {
     paymentMethod = method;
   }
+
+  function handleBarcodeScan(barcode: string) {
+    const exactMatch = products.find((p) => p.barcode === barcode || p.sku === barcode);
+    if (exactMatch) {
+      if (exactMatch.quantity > 0) {
+        addToCart(exactMatch);
+      } else {
+        errorMsg = `"${exactMatch.name}" is out of stock`;
+        setTimeout(() => (errorMsg = ""), 3000);
+      }
+    } else {
+      searchTerm = barcode;
+    }
+  }
 </script>
 
-<svelte:window onmousedown={handleOutsideClick} />
+<svelte:window onmousedown={handleOutsideClick} onkeydown={handleWindowKeydown} />
 <svelte:head>
   <title>Point of Sale - My Garments</title>
 </svelte:head>
@@ -312,25 +377,36 @@
           <Search
             class="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground"
           />
-          <div
-            class="absolute right-4 top-1/2 -translate-y-1/2 cursor-pointer transition-transform hover:scale-105 active:scale-95"
-          >
-            <Barcode
-              class="w-6 h-6 text-primary hover:text-secondary transition-colors"
-            />
-          </div>
+          {#if searchTerm}
+            <button
+              onclick={() => { searchTerm = ""; searchInputEl?.focus(); }}
+              class="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+              aria-label="Clear search"
+            >
+              <X class="w-5 h-5" />
+            </button>
+          {/if}
           <input
             type="text"
             placeholder={loadingProducts
               ? "Loading products…"
               : !selectedShopId
                 ? "Select a shop first…"
-                : "Search by product name, SKU or scan barcode…"}
+                : "Search by name, SKU or scan barcode…"}
             bind:value={searchTerm}
+            bind:this={searchInputEl}
+            onkeydown={handleSearchKeydown}
             disabled={loadingProducts || !selectedShopId}
-            class="w-full pl-12 pr-14 py-4 text-lg bg-input-background border-2 border-border rounded-xl outline-none focus:ring-2 focus:ring-ring focus:border-primary transition-all shadow-sm disabled:opacity-50"
+            class="w-full pl-12 pr-10 py-4 text-lg bg-input-background border-2 border-border rounded-xl outline-none focus:ring-2 focus:ring-ring focus:border-primary transition-all shadow-sm disabled:opacity-50"
           />
         </div>
+
+        <!-- Camera barcode scanner (mobile only) -->
+        <BarcodeScanner
+          onScan={handleBarcodeScan}
+          disabled={loadingProducts || !selectedShopId}
+          class="px-4 py-4 bg-muted border border-border rounded-xl hover:bg-primary/10 hover:border-primary transition-colors disabled:opacity-50"
+        />
 
         <!-- Browse / Picker toggle -->
         <button
@@ -364,7 +440,7 @@
               <div>
                 <p class="font-medium">{product.name}</p>
                 <p class="text-sm text-muted-foreground">
-                  {product.category} • {product.barcode || product.sku}
+                  {product.category}{product.sku ? " • " + product.sku : ""}{product.barcode ? " • " + product.barcode : ""}
                 </p>
               </div>
               <div class="text-right">
@@ -504,8 +580,7 @@
                 <div class="flex-1">
                   <p class="text-lg font-medium">{item.product.name}</p>
                   <p class="text-sm text-muted-foreground">
-                    {item.product.category} • {item.product.barcode ||
-                      item.product.sku}
+                    {item.product.category}{item.product.sku ? " • " + item.product.sku : ""}{item.product.barcode ? " • " + item.product.barcode : ""}
                   </p>
                   <p class="text-primary mt-1">
                     ₹{item.product.price} each {#if item.product.taxRate > 0}<span

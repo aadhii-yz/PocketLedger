@@ -19,7 +19,9 @@
     Trash2,
     TrendingUp,
     Receipt,
+    Search,
   } from "lucide-svelte";
+  import BarcodeScanner from "$lib/components/BarcodeScanner.svelte";
   import { pb, customFetch } from "$lib/pb";
   import { onMount } from "svelte";
   import { slide } from "svelte/transition";
@@ -40,6 +42,7 @@
 
   interface TransferItem {
     product_id: string;
+    productSearch: string;
     quantity: number;
     note: string;
   }
@@ -79,8 +82,9 @@
     notes: "",
   });
   let formItems = $state<TransferItem[]>([
-    { product_id: "", quantity: 1, note: "" },
+    { product_id: "", productSearch: "", quantity: 1, note: "" },
   ]);
+  let openItemDropdown = $state(-1);
 
   onMount(async () => {
     try {
@@ -117,11 +121,48 @@
   }
 
   function addItem() {
-    formItems = [...formItems, { product_id: "", quantity: 1, note: "" }];
+    formItems = [...formItems, { product_id: "", productSearch: "", quantity: 1, note: "" }];
   }
 
   function removeItem(i: number) {
     formItems = formItems.filter((_, idx) => idx !== i);
+    if (openItemDropdown === i) openItemDropdown = -1;
+    else if (openItemDropdown > i) openItemDropdown--;
+  }
+
+  function selectProductForItem(i: number, p: ProductOption) {
+    formItems[i].product_id = p.id;
+    formItems[i].productSearch = p.name;
+    openItemDropdown = -1;
+  }
+
+  function handleItemKeydown(i: number, e: KeyboardEvent) {
+    if (e.key === "Escape") { openItemDropdown = -1; return; }
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    const q = formItems[i].productSearch.trim();
+    if (!q) return;
+    const exact = productOptions.find((p) => p.barcode === q || p.sku === q);
+    if (exact) { selectProductForItem(i, exact); return; }
+    const filtered = productOptions.filter((p) => {
+      const ql = q.toLowerCase();
+      return (
+        p.name.toLowerCase().includes(ql) ||
+        p.sku.toLowerCase().includes(ql) ||
+        p.barcode.toLowerCase().includes(ql)
+      );
+    });
+    if (filtered.length === 1) selectProductForItem(i, filtered[0]);
+  }
+
+  function handleItemBarcodeScan(i: number, barcode: string) {
+    const exact = productOptions.find((p) => p.barcode === barcode || p.sku === barcode);
+    if (exact) {
+      selectProductForItem(i, exact);
+    } else {
+      formItems[i].productSearch = barcode;
+      openItemDropdown = i;
+    }
   }
 
   async function handleCreateTransfer(e: SubmitEvent) {
@@ -147,7 +188,8 @@
         }),
       });
       formData = { from_location: "", to_location: "", notes: "" };
-      formItems = [{ product_id: "", quantity: 1, note: "" }];
+      formItems = [{ product_id: "", productSearch: "", quantity: 1, note: "" }];
+      openItemDropdown = -1;
       showCreateForm = false;
       actionMsg = "Transfer created successfully.";
       await refreshTransfers();
@@ -315,18 +357,59 @@
                 {#each formItems as item, i (i)}
                   <div class="flex gap-2 items-start p-3 bg-muted rounded-lg">
                     <div class="flex-1 grid grid-cols-1 sm:grid-cols-3 gap-2">
-                      <select
-                        bind:value={item.product_id}
-                        class="px-3 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:ring-2 focus:ring-ring"
-                        required
-                      >
-                        <option value="">Choose product</option>
-                        {#each productOptions as p}
-                          <option value={p.id}
-                            >{p.name} ({p.barcode || p.sku})</option
-                          >
-                        {/each}
-                      </select>
+                      <div class="flex gap-1.5 items-center">
+                        <div class="relative flex-1">
+                          {#if item.product_id}
+                            <div class="flex items-center gap-1.5 px-3 py-2 text-sm bg-background border border-border rounded-lg">
+                              <span class="flex-1 truncate font-medium">{item.productSearch}</span>
+                              <button
+                                type="button"
+                                onclick={() => { formItems[i].product_id = ""; formItems[i].productSearch = ""; }}
+                                class="text-muted-foreground hover:text-foreground transition-colors shrink-0"
+                                aria-label="Clear product"
+                              >
+                                <X class="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          {:else}
+                            <Search class="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+                            <input
+                              type="text"
+                              bind:value={item.productSearch}
+                              onkeydown={(e) => handleItemKeydown(i, e)}
+                              oninput={() => (openItemDropdown = i)}
+                              onfocus={() => { if (item.productSearch.trim()) openItemDropdown = i; }}
+                              onblur={() => setTimeout(() => { if (openItemDropdown === i) openItemDropdown = -1; }, 150)}
+                              placeholder="Search product…"
+                              class="w-full pl-8 pr-3 py-2 text-sm bg-background border border-border rounded-lg outline-none focus:ring-2 focus:ring-ring"
+                            />
+                            {#if openItemDropdown === i}
+                              {@const q = item.productSearch.trim().toLowerCase()}
+                              {@const opts = q ? productOptions.filter((p) => p.name.toLowerCase().includes(q) || p.sku.toLowerCase().includes(q) || p.barcode.toLowerCase().includes(q)) : []}
+                              {#if opts.length > 0}
+                                <div class="absolute z-20 top-full left-0 right-0 mt-1 max-h-40 overflow-y-auto bg-background border border-border rounded-lg shadow-lg">
+                                  {#each opts.slice(0, 15) as p (p.id)}
+                                    <button
+                                      type="button"
+                                      onmousedown={() => selectProductForItem(i, p)}
+                                      class="w-full text-left px-3 py-2 text-sm hover:bg-muted transition-colors border-b border-border last:border-0"
+                                    >
+                                      <span class="font-medium">{p.name}</span>
+                                      <span class="text-xs text-muted-foreground ml-1">{p.sku}{p.sku && p.barcode ? " • " : ""}{p.barcode}</span>
+                                    </button>
+                                  {/each}
+                                </div>
+                              {/if}
+                            {/if}
+                          {/if}
+                        </div>
+                        {#if !item.product_id}
+                          <BarcodeScanner
+                            onScan={(barcode) => handleItemBarcodeScan(i, barcode)}
+                            class="p-2 bg-muted border border-border rounded-lg hover:bg-primary/10 hover:border-primary transition-colors"
+                          />
+                        {/if}
+                      </div>
                       <input
                         type="number"
                         bind:value={item.quantity}
