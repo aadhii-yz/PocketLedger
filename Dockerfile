@@ -2,6 +2,11 @@
 FROM node:25-alpine AS frontend-builder
 WORKDIR /app/frontend
 
+# Declare ARG so it can be passed during build
+# Defaulting to / is best for SPA + PocketBase same-origin setups
+ARG VITE_PB_URL=/
+ENV VITE_PB_URL=$VITE_PB_URL
+
 # Use legacy-peer-deps for Vite 8 compatibility as per project requirements
 COPY frontend/package*.json ./
 RUN npm install --legacy-peer-deps

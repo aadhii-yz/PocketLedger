@@ -10,7 +10,10 @@ export interface AuthUser {
   assigned_shop: string;
 }
 
-const PB_URL = import.meta.env.VITE_PB_URL || 'http://localhost:8090';
+// This detects the current URL the user is visiting and uses it as the base
+const PB_URL = import.meta.env.VITE_PB_URL && import.meta.env.VITE_PB_URL !== '/' 
+    ? import.meta.env.VITE_PB_URL 
+    : window.location.origin;
 
 export const pb = new PocketBase(PB_URL);
 
