@@ -5,6 +5,7 @@
   import Button from "$lib/components/Button.svelte";
   import {
     Receipt,
+    History,
     Barcode,
     Plus,
     Minus,
@@ -23,7 +24,10 @@
   import { onMount } from "svelte";
   import { slide, fade } from "svelte/transition";
 
-  const menuItems = [{ label: "Billing", icon: Receipt, path: "/billing" }];
+  const menuItems = [
+    { label: "Billing", icon: Receipt, path: "/billing" },
+    { label: "Bill History", icon: History, path: "/billing/history" },
+  ];
 
   interface Product {
     id: string;
