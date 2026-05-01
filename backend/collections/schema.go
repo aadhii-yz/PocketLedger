@@ -267,7 +267,7 @@ func ensureStockMovements(app core.App) error {
 		col.Fields.Add(&core.TextField{Name: "reference"})
 		col.Fields.Add(&core.TextField{Name: "note"})
 		col.Indexes = append(col.Indexes,
-			"CREATE INDEX IF NOT EXISTS idx_movements_product_location ON {{stock_movements}} (product, location, created DESC)",
+			"CREATE INDEX IF NOT EXISTS idx_movements_product_location ON {{stock_movements}} (product, location DESC)",
 		)
 		return app.Save(col)
 	}
@@ -311,7 +311,7 @@ func ensureStockMovements(app core.App) error {
 		}
 	}
 	if !hasMovIdx {
-		movCol.Indexes = append(movCol.Indexes, "CREATE INDEX IF NOT EXISTS idx_movements_product_location ON {{stock_movements}} (product, location, created DESC)")
+		movCol.Indexes = append(movCol.Indexes, "CREATE INDEX IF NOT EXISTS idx_movements_product_location ON {{stock_movements}} (product, location DESC)")
 		changed = true
 	}
 	if !changed {
