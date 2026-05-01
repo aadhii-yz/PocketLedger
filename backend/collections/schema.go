@@ -182,7 +182,7 @@ func ensureStock(app core.App) error {
 		col.ListRule = new("@request.auth.id != ''")
 		col.ViewRule = new("@request.auth.id != ''")
 		col.CreateRule = new(editRole)
-		col.UpdateRule = new(editRole)
+		col.UpdateRule = new("@request.auth.role = 'admin' || @request.auth.role = 'manager'")
 		col.DeleteRule = new("@request.auth.role = 'admin'")
 		col.Fields.Add(&core.RelationField{
 			Name:         "product",
@@ -198,19 +198,41 @@ func ensureStock(app core.App) error {
 		})
 		col.Fields.Add(&core.NumberField{Name: "quantity", Required: true})
 		col.Fields.Add(&core.NumberField{Name: "low_stock_threshold"})
+		col.Indexes = append(col.Indexes,
+			"CREATE INDEX IF NOT EXISTS idx_stock_product_location ON {{stock}} (product, location)",
+		)
 		return app.Save(col)
 	}
 
 	// Upgrade path — add location if missing (Required: false to avoid breaking existing rows).
+	changed := false
 	if stockCol.Fields.GetByName("location") == nil {
 		stockCol.Fields.Add(&core.RelationField{
 			Name:         "location",
 			CollectionId: colId(app, "locations"),
 			MaxSelect:    1,
 		})
-		return app.Save(stockCol)
+		changed = true
 	}
-	return nil
+	newStockUpdateRule := "@request.auth.role = 'admin' || @request.auth.role = 'manager'"
+	if stockCol.UpdateRule == nil || *stockCol.UpdateRule != newStockUpdateRule {
+		stockCol.UpdateRule = &newStockUpdateRule
+		changed = true
+	}
+	hasStockIdx := false
+	for _, idx := range stockCol.Indexes {
+		if strings.Contains(idx, "idx_stock_product_location") {
+			hasStockIdx = true
+		}
+	}
+	if !hasStockIdx {
+		stockCol.Indexes = append(stockCol.Indexes, "CREATE INDEX IF NOT EXISTS idx_stock_product_location ON {{stock}} (product, location)")
+		changed = true
+	}
+	if !changed {
+		return nil
+	}
+	return app.Save(stockCol)
 }
 
 func ensureStockMovements(app core.App) error {
@@ -221,7 +243,7 @@ func ensureStockMovements(app core.App) error {
 		col := core.NewBaseCollection("stock_movements")
 		col.ListRule = new(viewRole)
 		col.ViewRule = new(viewRole)
-		col.CreateRule = new("@request.auth.id != ''")
+		col.CreateRule = new("@request.auth.role = 'admin' || @request.auth.role = 'manager' || @request.auth.role = 'stock_entry'")
 		col.UpdateRule = new("@request.auth.role = 'admin'")
 		col.DeleteRule = new("@request.auth.role = 'admin'")
 		col.Fields.Add(&core.RelationField{
@@ -244,6 +266,9 @@ func ensureStockMovements(app core.App) error {
 		col.Fields.Add(&core.NumberField{Name: "quantity", Required: true})
 		col.Fields.Add(&core.TextField{Name: "reference"})
 		col.Fields.Add(&core.TextField{Name: "note"})
+		col.Indexes = append(col.Indexes,
+			"CREATE INDEX IF NOT EXISTS idx_movements_product_location ON {{stock_movements}} (product, location, created DESC)",
+		)
 		return app.Save(col)
 	}
 
@@ -274,6 +299,21 @@ func ensureStockMovements(app core.App) error {
 		}
 	}
 
+	newMovCreateRule := "@request.auth.role = 'admin' || @request.auth.role = 'manager' || @request.auth.role = 'stock_entry'"
+	if movCol.CreateRule == nil || *movCol.CreateRule != newMovCreateRule {
+		movCol.CreateRule = &newMovCreateRule
+		changed = true
+	}
+	hasMovIdx := false
+	for _, idx := range movCol.Indexes {
+		if strings.Contains(idx, "idx_movements_product_location") {
+			hasMovIdx = true
+		}
+	}
+	if !hasMovIdx {
+		movCol.Indexes = append(movCol.Indexes, "CREATE INDEX IF NOT EXISTS idx_movements_product_location ON {{stock_movements}} (product, location, created DESC)")
+		changed = true
+	}
 	if !changed {
 		return nil
 	}
@@ -288,7 +328,7 @@ func ensureBills(app core.App) error {
 		col := core.NewBaseCollection("bills")
 		col.ListRule = new(viewRule)
 		col.ViewRule = new(viewRule)
-		col.CreateRule = new("@request.auth.id != ''")
+		col.CreateRule = new("@request.auth.id != '' && (@request.auth.role != 'pos' || shop = @request.auth.assigned_shop)")
 		col.UpdateRule = new("@request.auth.role = 'admin' || @request.auth.role = 'manager'")
 		col.DeleteRule = new("@request.auth.role = 'admin'")
 		col.Fields.Add(&core.AutodateField{Name: "created", OnCreate: true})
@@ -321,6 +361,9 @@ func ensureBills(app core.App) error {
 			MaxSelect:    1,
 		})
 		col.Fields.Add(&core.TextField{Name: "notes"})
+		col.Indexes = append(col.Indexes,
+			"CREATE INDEX IF NOT EXISTS idx_bills_shop_created ON {{bills}} (shop, created DESC)",
+		)
 		return app.Save(col)
 	}
 
@@ -354,6 +397,21 @@ func ensureBills(app core.App) error {
 		}
 	}
 
+	newBillsCreateRule := "@request.auth.id != '' && (@request.auth.role != 'pos' || shop = @request.auth.assigned_shop)"
+	if billsCol.CreateRule == nil || *billsCol.CreateRule != newBillsCreateRule {
+		billsCol.CreateRule = &newBillsCreateRule
+		changed = true
+	}
+	hasBillsIdx := false
+	for _, idx := range billsCol.Indexes {
+		if strings.Contains(idx, "idx_bills_shop_created") {
+			hasBillsIdx = true
+		}
+	}
+	if !hasBillsIdx {
+		billsCol.Indexes = append(billsCol.Indexes, "CREATE INDEX IF NOT EXISTS idx_bills_shop_created ON {{bills}} (shop, created DESC)")
+		changed = true
+	}
 	if !changed {
 		return nil
 	}
@@ -361,13 +419,21 @@ func ensureBills(app core.App) error {
 }
 
 func ensureBillItems(app core.App) error {
-	if _, err := app.FindCollectionByNameOrId("bill_items"); err == nil {
+	col, err := app.FindCollectionByNameOrId("bill_items")
+	if err == nil {
+		// Upgrade path: tighten createRule.
+		newRule := "@request.auth.role = 'admin' || @request.auth.role = 'manager' || @request.auth.role = 'pos'"
+		if col.CreateRule == nil || *col.CreateRule != newRule {
+			col.CreateRule = &newRule
+			return app.Save(col)
+		}
 		return nil
 	}
-	col := core.NewBaseCollection("bill_items")
+	// Fresh install.
+	col = core.NewBaseCollection("bill_items")
 	col.ListRule = new("@request.auth.id != ''")
 	col.ViewRule = new("@request.auth.id != ''")
-	col.CreateRule = new("@request.auth.id != ''")
+	col.CreateRule = new("@request.auth.role = 'admin' || @request.auth.role = 'manager' || @request.auth.role = 'pos'")
 	col.UpdateRule = new("@request.auth.role = 'admin'")
 	col.DeleteRule = new("@request.auth.role = 'admin'")
 	col.Fields.Add(&core.RelationField{
@@ -390,10 +456,19 @@ func ensureBillItems(app core.App) error {
 }
 
 func ensureSystemLogs(app core.App) error {
-	if _, err := app.FindCollectionByNameOrId("system_logs"); err == nil {
-		return nil
+	col, err := app.FindCollectionByNameOrId("system_logs")
+	if err == nil {
+		// Upgrade path: add index if missing.
+		for _, idx := range col.Indexes {
+			if strings.Contains(idx, "idx_logs_created") {
+				return nil
+			}
+		}
+		col.Indexes = append(col.Indexes, "CREATE INDEX IF NOT EXISTS idx_logs_created ON {{system_logs}} (created DESC)")
+		return app.Save(col)
 	}
-	col := core.NewBaseCollection("system_logs")
+	// Fresh install.
+	col = core.NewBaseCollection("system_logs")
 	col.ListRule = new("@request.auth.role = 'admin'")
 	col.ViewRule = new("@request.auth.role = 'admin'")
 	col.CreateRule = new("@request.auth.id != ''")
@@ -415,6 +490,7 @@ func ensureSystemLogs(app core.App) error {
 		Values:    []string{"billing", "stock", "auth", "system"},
 	})
 	col.Fields.Add(&core.TextField{Name: "user_id"})
+	col.Indexes = append(col.Indexes, "CREATE INDEX IF NOT EXISTS idx_logs_created ON {{system_logs}} (created DESC)")
 	return app.Save(col)
 }
 

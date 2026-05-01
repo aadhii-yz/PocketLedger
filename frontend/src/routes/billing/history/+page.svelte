@@ -112,6 +112,7 @@
         const result = await pb.collection("bills").getFullList({
           filter: `shop = "${shopId}"`,
           sort: "-created",
+          expand: "shop",
         });
         bills = result.map(mapBill);
         totalPages = 1;
@@ -120,6 +121,7 @@
         const result = await pb.collection("bills").getList(pageNum, perPage, {
           filter: `shop = "${shopId}"`,
           sort: "-created",
+          expand: "shop",
         });
         bills = result.items.map(mapBill);
         totalPages = result.totalPages;

@@ -55,23 +55,22 @@ func ListTransfers(app core.App) func(*core.RequestEvent) error {
 			return e.JSON(http.StatusInternalServerError, map[string]string{"message": err.Error()})
 		}
 
-		// Expand location names inline.
+		// Pre-fetch all locations once to avoid N+1 queries.
+		allLocations, _ := app.FindRecordsByFilter("locations", "id != ''", "name", 0, 0)
+		locMap := make(map[string]string, len(allLocations))
+		for _, loc := range allLocations {
+			locMap[loc.Id] = loc.GetString("name")
+		}
+
 		result := make([]map[string]any, 0, len(records))
 		for _, r := range records {
-			fromName, toName := "", ""
-			if fl, err := app.FindRecordById("locations", r.GetString("from_location")); err == nil {
-				fromName = fl.GetString("name")
-			}
-			if tl, err := app.FindRecordById("locations", r.GetString("to_location")); err == nil {
-				toName = tl.GetString("name")
-			}
 			result = append(result, map[string]any{
 				"id":                 r.Id,
 				"transfer_number":    r.GetString("transfer_number"),
 				"from_location":      r.GetString("from_location"),
-				"from_location_name": fromName,
+				"from_location_name": locMap[r.GetString("from_location")],
 				"to_location":        r.GetString("to_location"),
-				"to_location_name":   toName,
+				"to_location_name":   locMap[r.GetString("to_location")],
 				"status":             r.GetString("status"),
 				"notes":              r.GetString("notes"),
 				"created_by":         r.GetString("created_by"),
