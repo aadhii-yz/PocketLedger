@@ -41,6 +41,13 @@ func GenerateBarcode(app core.App) func(*core.RequestEvent) error {
 		if err != nil {
 			return e.JSON(http.StatusNotFound, map[string]string{"message": "product not found"})
 		}
+		if existing := product.GetString("barcode"); existing != "" {
+			return e.JSON(http.StatusOK, map[string]any{
+				"barcode": existing,
+				"product": product.Id,
+				"png_url": fmt.Sprintf("/api/custom/barcode/%s", product.Id),
+			})
+		}
 		barcodeValue := body.Value
 		if barcodeValue == "" {
 			var maxBarcode int

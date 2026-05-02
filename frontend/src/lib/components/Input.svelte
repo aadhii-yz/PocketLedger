@@ -8,6 +8,7 @@
     onchange?: (value: string) => void;
     icon?: import("svelte").Snippet;
     required?: boolean;
+    disabled?: boolean;
   }
 
   let {
@@ -19,6 +20,7 @@
     onchange,
     icon,
     required = false,
+    disabled = false,
   }: Props = $props();
 
   let focused = $state(false);
@@ -54,9 +56,10 @@
       onblur={() => (focused = false)}
       placeholder={isActive ? placeholder : ""}
       {required}
+      {disabled}
       class="w-full px-4 {icon
         ? 'pl-10'
-        : ''} pt-6 pb-2 bg-input-background border border-border rounded-lg outline-none focus:ring-2 focus:ring-ring transition-all"
+        : ''} pt-6 pb-2 bg-input-background border border-border rounded-lg outline-none focus:ring-2 focus:ring-ring transition-all disabled:opacity-50 disabled:cursor-not-allowed"
     />
     {#if label}
       <label
