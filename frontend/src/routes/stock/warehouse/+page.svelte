@@ -22,6 +22,7 @@
     TrendingUp,
     Receipt,
   } from "lucide-svelte";
+  import BarcodeScanner from "$lib/components/BarcodeScanner.svelte";
   import { pb, customFetch } from "$lib/pb";
   import { onMount } from "svelte";
   import { slide } from "svelte/transition";
@@ -189,6 +190,16 @@
     if (filteredProductOptions.length === 1) selectProduct(filteredProductOptions[0]);
   }
 
+  function handleBarcodeScan(barcode: string) {
+    const exact = products.find((p) => p.barcode === barcode || p.sku === barcode);
+    if (exact) {
+      selectProduct(exact);
+    } else {
+      productSearch = barcode;
+      showProductDropdown = true;
+    }
+  }
+
   function handleWindowKeydown(e: KeyboardEvent) {
     const target = e.target as HTMLElement;
     const isInputFocused =
@@ -326,34 +337,40 @@
                     </button>
                   </div>
                 {:else}
-                  <div class="relative">
-                    <Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
-                    <input
-                      id="whProduct"
-                      type="text"
-                      bind:value={productSearch}
-                      bind:this={productSearchInputEl}
-                      onkeydown={handleProductSearchKeydown}
-                      oninput={() => (showProductDropdown = true)}
-                      onfocus={() => { if (productSearch.trim()) showProductDropdown = true; }}
-                      onblur={() => setTimeout(() => (showProductDropdown = false), 150)}
-                      placeholder="Search by name, SKU or scan barcode…"
-                      class="w-full pl-9 pr-4 py-3 bg-input-background border border-border rounded-lg outline-none focus:ring-2 focus:ring-ring transition-all text-sm"
+                  <div class="flex gap-2 items-center">
+                    <div class="relative flex-1">
+                      <Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+                      <input
+                        id="whProduct"
+                        type="text"
+                        bind:value={productSearch}
+                        bind:this={productSearchInputEl}
+                        onkeydown={handleProductSearchKeydown}
+                        oninput={() => (showProductDropdown = true)}
+                        onfocus={() => { if (productSearch.trim()) showProductDropdown = true; }}
+                        onblur={() => setTimeout(() => (showProductDropdown = false), 150)}
+                        placeholder="Search by name, SKU or scan barcode…"
+                        class="w-full pl-9 pr-4 py-3 bg-input-background border border-border rounded-lg outline-none focus:ring-2 focus:ring-ring transition-all text-sm"
+                      />
+                      {#if showProductDropdown && filteredProductOptions.length > 0}
+                        <div class="absolute z-20 top-full left-0 right-0 mt-1 max-h-48 overflow-y-auto bg-background border border-border rounded-lg shadow-lg">
+                          {#each filteredProductOptions.slice(0, 20) as p (p.id)}
+                            <button
+                              type="button"
+                              onmousedown={() => selectProduct(p)}
+                              class="w-full text-left px-4 py-2.5 text-sm hover:bg-muted transition-colors border-b border-border last:border-0"
+                            >
+                              <span class="font-medium">{p.name}</span>
+                              <span class="text-xs text-muted-foreground ml-2">{p.sku}{p.sku && p.barcode ? " • " : ""}{p.barcode}</span>
+                            </button>
+                          {/each}
+                        </div>
+                      {/if}
+                    </div>
+                    <BarcodeScanner
+                      onScan={handleBarcodeScan}
+                      class="p-3 bg-muted border border-border rounded-lg hover:bg-primary/10 hover:border-primary transition-colors"
                     />
-                    {#if showProductDropdown && filteredProductOptions.length > 0}
-                      <div class="absolute z-20 top-full left-0 right-0 mt-1 max-h-48 overflow-y-auto bg-background border border-border rounded-lg shadow-lg">
-                        {#each filteredProductOptions.slice(0, 20) as p (p.id)}
-                          <button
-                            type="button"
-                            onmousedown={() => selectProduct(p)}
-                            class="w-full text-left px-4 py-2.5 text-sm hover:bg-muted transition-colors border-b border-border last:border-0"
-                          >
-                            <span class="font-medium">{p.name}</span>
-                            <span class="text-xs text-muted-foreground ml-2">{p.sku}{p.sku && p.barcode ? " • " : ""}{p.barcode}</span>
-                          </button>
-                        {/each}
-                      </div>
-                    {/if}
                   </div>
                 {/if}
               </div>

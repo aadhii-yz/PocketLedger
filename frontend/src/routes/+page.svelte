@@ -1,8 +1,21 @@
 <script lang="ts">
   import { ShoppingBag, Mail, Lock } from "lucide-svelte";
   import { goto } from "$app/navigation";
+  import { onMount } from "svelte";
   import { pb, mapRole } from "$lib/pb";
   import { fade, fly } from "svelte/transition";
+
+  onMount(() => {
+    if (pb.authStore.isValid && pb.authStore.record) {
+      const role = mapRole(pb.authStore.record["role"]);
+      switch (role) {
+        case "admin": goto("/admin"); break;
+        case "manager": goto("/manager"); break;
+        case "billing": goto("/billing"); break;
+        case "stock": goto("/stock/products"); break;
+      }
+    }
+  });
 
   let email = $state("");
   let password = $state("");

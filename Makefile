@@ -9,10 +9,10 @@ all: build
 ## build: install deps, build frontend + backend, copy assets
 build: frontend backend copy
 
-## frontend: install deps and build Svelte
+## frontend: install deps and build Svelte (set NO_PWA=1 to skip service-worker generation)
 frontend:
 	@echo ">>> Building frontend..."
-	cd frontend && npm i && npm run build
+	cd frontend && npm i && NO_PWA=$(NO_PWA) npm run build
 
 ## backend: tidy deps and compile Go binary
 backend:

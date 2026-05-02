@@ -3,11 +3,13 @@ import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
+const noPwa = process.env.NO_PWA === '1';
+
 export default defineConfig({
 	plugins: [
 		tailwindcss(),
 		sveltekit(),
-		VitePWA({
+		!noPwa && VitePWA({
 			registerType: 'autoUpdate',
 			injectRegister: null,
 			manifest: {
@@ -51,5 +53,5 @@ export default defineConfig({
 				]
 			}
 		})
-	]
+	].filter(Boolean)
 });
