@@ -171,7 +171,10 @@
 
   async function handleSubmit(e: SubmitEvent) {
     e.preventDefault();
-    if (!formData.productId) { errorMsg = "Please select a product."; return; }
+    if (!formData.productId) {
+      errorMsg = "Please select a product.";
+      return;
+    }
     saving = true;
     errorMsg = "";
     try {
@@ -240,21 +243,33 @@
     );
   });
 
-  function selectProduct(p: { id: string; name: string; sku: string; barcode: string }) {
+  function selectProduct(p: {
+    id: string;
+    name: string;
+    sku: string;
+    barcode: string;
+  }) {
     formData.productId = p.id;
     productSearch = p.name;
     showProductDropdown = false;
   }
 
   function handleProductSearchKeydown(e: KeyboardEvent) {
-    if (e.key === "Escape") { showProductDropdown = false; return; }
+    if (e.key === "Escape") {
+      showProductDropdown = false;
+      return;
+    }
     if (e.key !== "Enter") return;
     e.preventDefault();
     const q = productSearch.trim();
     if (!q) return;
     const exact = uniqueProducts.find((p) => p.barcode === q || p.sku === q);
-    if (exact) { selectProduct(exact); return; }
-    if (filteredProductOptions.length === 1) selectProduct(filteredProductOptions[0]);
+    if (exact) {
+      selectProduct(exact);
+      return;
+    }
+    if (filteredProductOptions.length === 1)
+      selectProduct(filteredProductOptions[0]);
   }
 
   function handleWindowKeydown(e: KeyboardEvent) {
@@ -300,7 +315,9 @@
   );
 
   function handleBarcodeScan(barcode: string) {
-    const exact = uniqueProducts.find((p) => p.barcode === barcode || p.sku === barcode);
+    const exact = uniqueProducts.find(
+      (p) => p.barcode === barcode || p.sku === barcode,
+    );
     if (exact) {
       selectProduct(exact);
     } else {
@@ -408,15 +425,26 @@
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
               <!-- Product Select -->
               <div class="relative w-full mb-6">
-                <label class="block mb-2 text-sm text-muted-foreground" for="productSelect">
+                <label
+                  class="block mb-2 text-sm text-muted-foreground"
+                  for="productSelect"
+                >
                   Select Product <span class="text-destructive">*</span>
                 </label>
                 {#if formData.productId}
-                  <div class="flex items-center gap-2 px-4 py-3 bg-input-background border border-border rounded-lg">
-                    <span class="flex-1 text-sm font-medium truncate">{productSearch}</span>
+                  <div
+                    class="flex items-center gap-2 px-4 py-3 bg-input-background border border-border rounded-lg"
+                  >
+                    <span class="flex-1 text-sm font-medium truncate"
+                      >{productSearch}</span
+                    >
                     <button
                       type="button"
-                      onclick={() => { formData.productId = ""; productSearch = ""; setTimeout(() => productSearchInputEl?.focus(), 50); }}
+                      onclick={() => {
+                        formData.productId = "";
+                        productSearch = "";
+                        setTimeout(() => productSearchInputEl?.focus(), 50);
+                      }}
                       class="text-muted-foreground hover:text-foreground transition-colors shrink-0"
                       aria-label="Clear product"
                     >
@@ -426,7 +454,9 @@
                 {:else}
                   <div class="flex gap-2 items-center">
                     <div class="relative flex-1">
-                      <Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+                      <Search
+                        class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none"
+                      />
                       <input
                         id="productSelect"
                         type="text"
@@ -434,13 +464,18 @@
                         bind:this={productSearchInputEl}
                         onkeydown={handleProductSearchKeydown}
                         oninput={() => (showProductDropdown = true)}
-                        onfocus={() => { if (productSearch.trim()) showProductDropdown = true; }}
-                        onblur={() => setTimeout(() => (showProductDropdown = false), 150)}
+                        onfocus={() => {
+                          if (productSearch.trim()) showProductDropdown = true;
+                        }}
+                        onblur={() =>
+                          setTimeout(() => (showProductDropdown = false), 150)}
                         placeholder="Search by name, SKU or scan barcode…"
                         class="w-full pl-9 pr-4 py-3 bg-input-background border border-border rounded-lg outline-none focus:ring-2 focus:ring-ring transition-all text-sm"
                       />
                       {#if showProductDropdown && filteredProductOptions.length > 0}
-                        <div class="absolute z-20 top-full left-0 right-0 mt-1 max-h-48 overflow-y-auto bg-background border border-border rounded-lg shadow-lg">
+                        <div
+                          class="absolute z-20 top-full left-0 right-0 mt-1 max-h-48 overflow-y-auto bg-background border border-border rounded-lg shadow-lg"
+                        >
                           {#each filteredProductOptions.slice(0, 20) as p (p.id)}
                             <button
                               type="button"
@@ -448,7 +483,11 @@
                               class="w-full text-left px-4 py-2.5 text-sm hover:bg-muted transition-colors border-b border-border last:border-0"
                             >
                               <span class="font-medium">{p.name}</span>
-                              <span class="text-xs text-muted-foreground ml-2">{p.sku}{p.sku && p.barcode ? " • " : ""}{p.barcode}</span>
+                              <span class="text-xs text-muted-foreground ml-2"
+                                >{p.sku}{p.sku && p.barcode
+                                  ? " • "
+                                  : ""}{p.barcode}</span
+                              >
                             </button>
                           {/each}
                         </div>

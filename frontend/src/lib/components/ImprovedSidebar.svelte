@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { ComponentType } from "svelte";
   import type { Icon } from "lucide-svelte";
-  import { ShoppingBag, Menu, ChevronLeft, X } from "lucide-svelte";
+  import { ShoppingBag, Menu, ChevronLeft, LogOut } from "lucide-svelte";
   import { goto } from "$app/navigation";
   import { page } from "$app/stores";
   import { onMount } from "svelte";
@@ -96,7 +96,9 @@
           onclick={() => goto(item.path)}
           class="w-full flex items-center gap-3 px-3 py-3 rounded-lg transition-all hover:translate-x-0.5 {isActive
             ? 'bg-sidebar-accent text-sidebar-accent-foreground shadow-sm'
-            : 'hover:bg-sidebar-accent/50 text-sidebar-foreground'}"
+            : 'hover:bg-sidebar-accent/50 text-sidebar-foreground'} {isCollapsed
+            ? 'justify-center'
+            : ''}"
           title={isCollapsed ? item.label : undefined}
         >
           <item.icon class="w-5 h-5 shrink-0" />
@@ -116,10 +118,12 @@
     <div class="px-3 mt-auto">
       <button
         onclick={handleLogout}
-        class="w-full flex items-center gap-3 px-3 py-3 rounded-lg bg-destructive text-destructive-foreground hover:opacity-90 transition-all hover:scale-[1.02]"
+        class="w-full flex items-center gap-3 px-3 py-3 rounded-lg bg-destructive text-destructive-foreground hover:opacity-90 transition-all hover:scale-[1.02] {isCollapsed
+          ? 'justify-center'
+          : ''}"
         title={isCollapsed ? "Logout" : undefined}
       >
-        <X class="w-5 h-5 shrink-0" />
+        <LogOut class="w-5 h-5 shrink-0" />
         {#if !isCollapsed}
           <span
             transition:slide={{ axis: "x", duration: 200 }}
