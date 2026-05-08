@@ -22,7 +22,7 @@
   import BarcodeScanner from "$lib/components/BarcodeScanner.svelte";
   import { pb, customFetch } from "$lib/pb";
   import { printReceipt, loadPrintSettings } from "$lib/print";
-  import { onMount } from "svelte";
+  import { onMount, onDestroy } from "svelte";
   import { slide, fade } from "svelte/transition";
 
   const menuItems = [
@@ -68,6 +68,7 @@
   let shops = $state<ShopOption[]>([]);
   let selectedShopId = $state("");
   let online = $state(true);
+  let clearTimer: ReturnType<typeof setTimeout> | undefined;
 
   $effect(() => {
     online = navigator.onLine;
@@ -105,8 +106,8 @@
         taxRate: p.tax_rate || 0,
         quantity: stockMap.get(p.id) || 0,
       }));
-    } catch (e) {
-      console.error("Failed to load products", e);
+    } catch (e: any) {
+      errorMsg = e?.message || "Failed to load products for this shop.";
     } finally {
       loadingProducts = false;
       setTimeout(() => searchInputEl?.focus(), 50);
@@ -142,6 +143,10 @@
       }
     }
     init();
+  });
+
+  onDestroy(() => {
+    clearTimeout(clearTimer);
   });
 
   function handleOutsideClick(e: MouseEvent) {
@@ -202,7 +207,6 @@
         addToCart(exactMatch);
       } else {
         errorMsg = `"${exactMatch.name}" is out of stock`;
-        setTimeout(() => (errorMsg = ""), 3000);
       }
       return;
     }
@@ -211,7 +215,6 @@
         addToCart(filteredProducts[0]);
       } else {
         errorMsg = `"${filteredProducts[0].name}" is out of stock`;
-        setTimeout(() => (errorMsg = ""), 3000);
       }
     }
   }
@@ -268,7 +271,7 @@
   }
 
   async function handleGenerateBill() {
-    if (cart.length === 0) return;
+    if (cart.length === 0 || submitting) return;
     submitting = true;
     errorMsg = "";
     try {
@@ -327,7 +330,7 @@
           ? { ...p, quantity: p.quantity - cartItem.quantity }
           : p;
       });
-      setTimeout(() => {
+      clearTimer = setTimeout(() => {
         showReceipt = false;
         cart = [];
         paymentMethod = "cash";
@@ -352,7 +355,6 @@
         addToCart(exactMatch);
       } else {
         errorMsg = `"${exactMatch.name}" is out of stock`;
-        setTimeout(() => (errorMsg = ""), 3000);
       }
     } else {
       searchTerm = barcode;

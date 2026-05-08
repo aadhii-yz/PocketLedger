@@ -51,6 +51,10 @@ func CreateBill(app core.App) func(*core.RequestEvent) error {
 			})
 		}
 
+		if req.Discount < 0 {
+			req.Discount = 0
+		}
+
 		var billId, billNumber string
 		var grandTotal float64
 

@@ -15,7 +15,7 @@
 </script>
 
 {#if !online}
-  <div class="fixed bottom-0 left-0 right-0 z-50 bg-yellow-500 px-4 py-2 text-center text-sm font-medium text-yellow-950">
+  <div role="alert" class="fixed bottom-0 left-0 right-0 z-50 bg-yellow-500 px-4 py-2 text-center text-sm font-medium text-yellow-950">
     You are offline — showing cached data. Transactions are disabled.
   </div>
 {/if}

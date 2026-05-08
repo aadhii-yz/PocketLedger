@@ -30,9 +30,15 @@ func main() {
 	app.OnRecordDelete("locations").BindFunc(func(e *core.RecordEvent) error {
 		id := e.Record.Id
 		var stockCount, billCount, transferCount int
-		app.DB().NewQuery("SELECT COUNT(*) FROM stock WHERE location = {:id}").Bind(dbx.Params{"id": id}).Row(&stockCount)
-		app.DB().NewQuery("SELECT COUNT(*) FROM bills WHERE shop = {:id}").Bind(dbx.Params{"id": id}).Row(&billCount)
-		app.DB().NewQuery("SELECT COUNT(*) FROM stock_transfers WHERE from_location = {:id} OR to_location = {:id}").Bind(dbx.Params{"id": id}).Row(&transferCount)
+		if err := app.DB().NewQuery("SELECT COUNT(*) FROM stock WHERE location = {:id}").Bind(dbx.Params{"id": id}).Row(&stockCount); err != nil {
+			return err
+		}
+		if err := app.DB().NewQuery("SELECT COUNT(*) FROM bills WHERE shop = {:id}").Bind(dbx.Params{"id": id}).Row(&billCount); err != nil {
+			return err
+		}
+		if err := app.DB().NewQuery("SELECT COUNT(*) FROM stock_transfers WHERE from_location = {:id} OR to_location = {:id}").Bind(dbx.Params{"id": id}).Row(&transferCount); err != nil {
+			return err
+		}
 		if stockCount+billCount+transferCount > 0 {
 			return apis.NewBadRequestError("Cannot delete a location that has associated stock, bills, or transfers.", nil)
 		}

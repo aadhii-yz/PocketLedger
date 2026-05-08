@@ -6,8 +6,8 @@ import PocketBase from 'pocketbase';
 export type { AuthUser } from '$lib/schemas';
 
 // This detects the current URL the user is visiting and uses it as the base
-const PB_URL = import.meta.env.VITE_PB_URL && import.meta.env.VITE_PB_URL !== '/' 
-    ? import.meta.env.VITE_PB_URL 
+export const PB_URL = import.meta.env.VITE_PB_URL && import.meta.env.VITE_PB_URL !== '/'
+    ? import.meta.env.VITE_PB_URL
     : window.location.origin;
 
 export const pb = new PocketBase(PB_URL);

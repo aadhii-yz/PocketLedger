@@ -28,7 +28,7 @@
     <thead class="bg-muted border-b border-border">
       <tr>
         {#each columns as column}
-          <th class="px-6 py-3 text-left">
+          <th scope="col" class="px-6 py-3 text-left">
             {column.header}
           </th>
         {/each}

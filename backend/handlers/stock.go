@@ -24,8 +24,15 @@ func AdjustStock(app core.App) func(*core.RequestEvent) error {
 		if err := e.BindBody(&req); err != nil {
 			return e.JSON(http.StatusBadRequest, map[string]string{"message": "invalid request body"})
 		}
+		if req.ProductID == "" {
+			return e.JSON(http.StatusBadRequest, map[string]string{"message": "product_id is required"})
+		}
 		if req.LocationID == "" {
 			return e.JSON(http.StatusBadRequest, map[string]string{"message": "location_id is required"})
+		}
+		validTypes := map[string]bool{"purchase": true, "adjustment": true, "return": true}
+		if !validTypes[req.Type] {
+			return e.JSON(http.StatusBadRequest, map[string]string{"message": "type must be one of: purchase, adjustment, return"})
 		}
 
 		err := app.RunInTransaction(func(txApp core.App) error {

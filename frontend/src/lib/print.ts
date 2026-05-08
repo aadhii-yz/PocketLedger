@@ -1,4 +1,4 @@
-import { pb } from './pb';
+import { pb, PB_URL } from './pb';
 import type { PrintSettings } from '$lib/schemas';
 
 export type { PrintSettings } from '$lib/schemas';
@@ -375,7 +375,6 @@ export async function printBarcode(
   },
   settings: PrintSettings
 ): Promise<void> {
-  const PB_URL = (pb as any).baseURL ?? (pb as any).baseUrl ?? window.location.origin;
   const token = pb.authStore.token;
 
   // Fetch barcode PNG and convert to base64 data URL so it works in both
