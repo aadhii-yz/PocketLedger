@@ -24,6 +24,7 @@
   } from "lucide-svelte";
   import BarcodeScanner from "$lib/components/BarcodeScanner.svelte";
   import { pb, customFetch } from "$lib/pb";
+  import { StockAdjustFormSchema, firstError } from "$lib/schemas";
   import { onMount } from "svelte";
   import { slide } from "svelte/transition";
 
@@ -131,18 +132,27 @@
 
   async function handleSubmit(e: SubmitEvent) {
     e.preventDefault();
-    if (!formData.productId) { errorMsg = "Please select a product."; return; }
-    saving = true;
     errorMsg = "";
+    const parsed = StockAdjustFormSchema.safeParse({
+      productId: formData.productId,
+      quantity: formData.quantity,
+      type: formData.type,
+      note: formData.note || undefined,
+    });
+    if (!parsed.success) {
+      errorMsg = firstError(parsed.error);
+      return;
+    }
+    saving = true;
     try {
       await customFetch("/stock/adjust", {
         method: "POST",
         body: JSON.stringify({
-          product_id: formData.productId,
+          product_id: parsed.data.productId,
           location_id: warehouseId,
-          quantity: Number(formData.quantity),
-          type: formData.type,
-          note: formData.note || `${formData.type} entry`,
+          quantity: parsed.data.quantity,
+          type: parsed.data.type,
+          note: parsed.data.note || `${parsed.data.type} entry`,
         }),
       });
       await loadData();

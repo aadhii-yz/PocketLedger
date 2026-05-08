@@ -22,6 +22,7 @@
     AlertCircle,
   } from "lucide-svelte";
   import { pb } from "$lib/pb";
+  import { UserFormSchema, UserCreateFormSchema, firstError } from "$lib/schemas";
   import { onMount } from "svelte";
   import { slide } from "svelte/transition";
   import { Store, Printer } from "lucide-svelte";
@@ -115,31 +116,44 @@
 
   async function handleSubmit(e: SubmitEvent) {
     e.preventDefault();
+    errorMsg = "";
+    const schema = editingUser ? UserFormSchema : UserCreateFormSchema;
+    const parsed = schema.safeParse({
+      email: formData.email,
+      fullName: formData.fullName,
+      role: formData.role,
+      password: formData.password || undefined,
+      assignedShop: formData.assignedShop || undefined,
+    });
+    if (!parsed.success) {
+      errorMsg = firstError(parsed.error);
+      return;
+    }
     saving = true;
     errorMsg = "";
     try {
       const needsShop =
-        formData.role === "pos" || formData.role === "stock_entry";
+        parsed.data.role === "pos" || parsed.data.role === "stock_entry";
       if (editingUser) {
         const data: any = {
-          email: formData.email,
-          name: formData.fullName,
-          role: formData.role,
-          assigned_shop: needsShop ? formData.assignedShop || null : null,
+          email: parsed.data.email,
+          name: parsed.data.fullName,
+          role: parsed.data.role,
+          assigned_shop: needsShop ? parsed.data.assignedShop || null : null,
         };
-        if (formData.password) {
-          data.password = formData.password;
-          data.passwordConfirm = formData.password;
+        if (parsed.data.password) {
+          data.password = parsed.data.password;
+          data.passwordConfirm = parsed.data.password;
         }
         await pb.collection("users").update(editingUser.id, data);
       } else {
         await pb.collection("users").create({
-          email: formData.email,
-          name: formData.fullName,
-          role: formData.role,
-          assigned_shop: needsShop ? formData.assignedShop || null : null,
-          password: formData.password,
-          passwordConfirm: formData.password,
+          email: parsed.data.email,
+          name: parsed.data.fullName,
+          role: parsed.data.role,
+          assigned_shop: needsShop ? parsed.data.assignedShop || null : null,
+          password: parsed.data.password,
+          passwordConfirm: parsed.data.password,
         });
       }
       await loadUsers();

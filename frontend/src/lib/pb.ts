@@ -3,12 +3,7 @@
 
 import PocketBase from 'pocketbase';
 
-export interface AuthUser {
-  id: string;
-  email: string;
-  role: 'admin' | 'manager' | 'pos' | 'stock_entry';
-  assigned_shop: string;
-}
+export type { AuthUser } from '$lib/schemas';
 
 // This detects the current URL the user is visiting and uses it as the base
 const PB_URL = import.meta.env.VITE_PB_URL && import.meta.env.VITE_PB_URL !== '/' 

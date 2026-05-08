@@ -20,6 +20,7 @@
   } from "lucide-svelte";
   import BarcodeScanner from "$lib/components/BarcodeScanner.svelte";
   import { pb, customFetch } from "$lib/pb";
+  import { type Location } from "$lib/schemas";
   import { onMount } from "svelte";
   import { slide } from "svelte/transition";
 
@@ -32,12 +33,6 @@
     { label: "Shop Stock", icon: Store, path: "/stock/shops" },
     { label: "Transfers", icon: ArrowLeftRight, path: "/stock/transfers" },
   ];
-
-  interface Location {
-    id: string;
-    name: string;
-    type: string;
-  }
 
   interface StockProduct {
     id: string;

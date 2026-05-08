@@ -90,14 +90,25 @@ Built on [PocketBase](https://pocketbase.io/) (v0.37). PocketBase provides the S
 SvelteKit app in **static adapter mode** (prerendered, `fallback: index.html` for SPA routing). Uses Svelte 5 runes mode enforced project-wide via `svelte.config.js`.
 
 **Key files:**
-- `src/lib/pb.ts` — PocketBase client singleton, `customFetch` helper for `/api/custom/*` calls (injects auth token), and `mapRole` (PocketBase role → frontend role).
-- `src/lib/print.ts` — Print utility: `loadPrintSettings()` (fetches singleton from `print_settings` collection), `printReceipt(bill, settings)` (80mm thermal receipt), `printBarcode(product, settings)` (single barcode label). All printing uses the Blob URL approach — `new Blob([html], { type: 'text/html' })` → `URL.createObjectURL` → `window.open` — to avoid deprecated `document.write`. Barcode PNG is fetched from `/api/custom/barcode/{id}` as a blob and embedded as a second Blob URL so the image loads correctly in the new window.
+- `src/lib/schemas.ts` — **Single source of truth for all types.** Zod schemas for every PocketBase collection (snake_case, matching `backend/pb_schema.json`) plus exported `z.infer<>` TypeScript types and form input schemas with validation messages. Do not define PocketBase record types elsewhere — import from here. Also exports `firstError(ZodError)` utility.
+- `src/lib/pb.ts` — PocketBase client singleton, `customFetch` helper for `/api/custom/*` calls (injects auth token), and `mapRole` (PocketBase role → frontend role). `AuthUser` type re-exported from `schemas.ts`.
+- `src/lib/print.ts` — Print utility: `loadPrintSettings()` (fetches singleton from `print_settings` collection), `printReceipt(bill, settings)` (80mm thermal receipt), `printBarcode(product, settings)` (single barcode label). All printing uses the Blob URL approach — `new Blob([html], { type: 'text/html' })` → `URL.createObjectURL` → `window.open` — to avoid deprecated `document.write`. Barcode PNG is fetched from `/api/custom/barcode/{id}` as a blob and embedded as a second Blob URL so the image loads correctly in the new window. `PrintSettings` type re-exported from `schemas.ts`.
 - `src/routes/+page.svelte` — login page; on success calls `mapRole` and `goto`s to the role dashboard.
 - Routes are organized by role: `/admin` (logs, users), `/manager` (reports, sales, stock, users, print-settings), `/billing` (history), `/stock` (inventory, products, shops, transfers, warehouse), `/stats` (overview, [shopId]).
 - `src/lib/components/` — shared UI primitives (Button, Card, DataTable, etc.).
 - `src/lib/index.ts` — barrel export for components.
 
-**Key frontend dependencies:** Tailwind CSS v4 (via `@tailwindcss/vite`, theme defined in `src/styles/theme.css`), `lucide-svelte` for icons, `chart.js` + `svelte-chartjs` for stats charts, `date-fns` for date formatting.
+**Zod schema pattern:** `schemas.ts` contains collection schemas (reference only, not used to parse API responses — PocketBase expanded relations return nested objects that won't match flat-ID schemas) and form input schemas (used with `safeParse()` before API calls). Form handlers follow this pattern:
+```typescript
+import { XFormSchema, firstError } from '$lib/schemas';
+
+const parsed = XFormSchema.safeParse({ ...formValues });
+if (!parsed.success) { errorMsg = firstError(parsed.error); return; }
+// use parsed.data in the try block
+```
+Form schemas using `z.coerce.number()` handle `<input type="number">` string values automatically. API responses are typed via `z.infer<>` but never runtime-parsed.
+
+**Key frontend dependencies:** Tailwind CSS v4 (via `@tailwindcss/vite`, theme defined in `src/styles/theme.css`), `lucide-svelte` for icons, `chart.js` + `svelte-chartjs` for stats charts, `date-fns` for date formatting, `zod` for runtime form validation and type inference.
 
 **Dynamic routes require `+page.ts`:** The root `+layout.ts` sets `prerender = true` and `trailingSlash = 'always'`. Any route with dynamic params (e.g. `/stats/[shopId]/`) needs a companion `+page.ts` with `export const prerender = false; export const ssr = false;` or the build will fail. The `/admin` and `/stats/overview` routes also carry their own `+page.ts` for this reason.
 

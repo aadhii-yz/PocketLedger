@@ -18,6 +18,7 @@
     AlertCircle,
   } from "lucide-svelte";
   import { pb } from "$lib/pb";
+  import { PrintSettingsSchema, firstError } from "$lib/schemas";
   import { onMount } from "svelte";
 
   const menuItems = [
@@ -70,10 +71,9 @@
   });
 
   async function handleSave() {
-    saving = true;
     errorMsg = "";
     successMsg = "";
-    const data = {
+    const parsed = PrintSettingsSchema.safeParse({
       shop_name: shopName,
       shop_address: shopAddress,
       shop_phone: shopPhone,
@@ -83,7 +83,13 @@
       show_tax_breakdown: showTaxBreakdown,
       barcode_show_sku: barcodeShowSku,
       barcode_show_price: barcodeShowPrice,
-    };
+    });
+    if (!parsed.success) {
+      errorMsg = firstError(parsed.error);
+      return;
+    }
+    saving = true;
+    const data = parsed.data;
     try {
       if (settingsId) {
         await pb.collection("print_settings").update(settingsId, data);

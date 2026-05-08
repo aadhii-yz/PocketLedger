@@ -1,16 +1,7 @@
 import { pb } from './pb';
+import type { PrintSettings } from '$lib/schemas';
 
-export interface PrintSettings {
-  shop_name: string;
-  shop_address: string;
-  shop_phone: string;
-  gst_number: string;
-  receipt_footer: string;
-  show_customer_info: boolean;
-  show_tax_breakdown: boolean;
-  barcode_show_sku: boolean;
-  barcode_show_price: boolean;
-}
+export type { PrintSettings } from '$lib/schemas';
 
 export interface BillPrintItem {
   name: string;

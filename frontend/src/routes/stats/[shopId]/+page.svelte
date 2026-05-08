@@ -19,6 +19,7 @@
     ArrowLeftRight,
     ShoppingBag,
     Receipt,
+    Printer,
   } from "lucide-svelte";
   import { customFetch, pb } from "$lib/pb";
   import { goto } from "$app/navigation";
@@ -34,6 +35,7 @@
     { label: "Shop Overview", icon: Store, path: "/stats/overview" },
     { label: "Reports", icon: FileText, path: "/manager/reports" },
     { label: "Users", icon: Users, path: "/manager/users" },
+    { label: "Print Settings", icon: Printer, path: "/manager/print-settings" },
   ];
 
   const stockMenuItems = [
@@ -99,8 +101,11 @@
 
   function formatDate(d: string) {
     return new Date(d).toLocaleString("en-GB", {
-      day: "2-digit", month: "short", year: "numeric",
-      hour: "2-digit", minute: "2-digit",
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
     });
   }
 
@@ -108,7 +113,11 @@
     if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
     const pages: (number | string)[] = [1];
     if (current > 3) pages.push("...");
-    for (let i = Math.max(2, current - 1); i <= Math.min(total - 1, current + 1); i++) {
+    for (
+      let i = Math.max(2, current - 1);
+      i <= Math.min(total - 1, current + 1);
+      i++
+    ) {
       pages.push(i);
     }
     if (current < total - 2) pages.push("...");
@@ -137,10 +146,12 @@
         billsTotalPages = 1;
         billsPage = 1;
       } else {
-        const result = await pb.collection("bills").getList(pageNum, billsPerPage, {
-          filter: `shop = "${shopId}"`,
-          sort: "-created",
-        });
+        const result = await pb
+          .collection("bills")
+          .getList(pageNum, billsPerPage, {
+            filter: `shop = "${shopId}"`,
+            sort: "-created",
+          });
         bills = result.items.map(mapBill);
         billsTotalPages = result.totalPages;
         billsPage = pageNum;
@@ -325,7 +336,10 @@
             <span class="text-muted-foreground">Rows:</span>
             <select
               value={billsPerPage}
-              onchange={(e) => { billsPerPage = parseInt((e.target as HTMLSelectElement).value); loadBills(1); }}
+              onchange={(e) => {
+                billsPerPage = parseInt((e.target as HTMLSelectElement).value);
+                loadBills(1);
+              }}
               class="px-2 py-1 bg-input-background border border-border rounded-lg outline-none focus:ring-2 focus:ring-ring text-sm"
             >
               <option value={10}>10</option>
@@ -338,11 +352,15 @@
         </div>
 
         {#if billsLoading}
-          <div class="text-center py-10 text-muted-foreground text-sm">Loading bills…</div>
+          <div class="text-center py-10 text-muted-foreground text-sm">
+            Loading bills…
+          </div>
         {:else if bills.length === 0}
           <div class="text-center py-10">
             <Receipt class="w-12 h-12 mx-auto mb-3 opacity-20" />
-            <p class="text-muted-foreground text-sm">No bills found for this shop</p>
+            <p class="text-muted-foreground text-sm">
+              No bills found for this shop
+            </p>
           </div>
         {:else}
           <div class="overflow-x-auto">
@@ -359,14 +377,30 @@
               </thead>
               <tbody>
                 {#each bills as bill (bill.id)}
-                  <tr class="border-b border-border hover:bg-muted/40 transition-colors">
+                  <tr
+                    class="border-b border-border hover:bg-muted/40 transition-colors"
+                  >
                     <td class="py-2 px-3 font-medium">{bill.bill_number}</td>
-                    <td class="py-2 px-3 text-muted-foreground">{bill.customer_name}</td>
-                    <td class="py-2 px-3 text-muted-foreground whitespace-nowrap">{formatDate(bill.created)}</td>
-                    <td class="py-2 px-3 text-right font-semibold text-primary">₹{Math.round(bill.grand_total).toLocaleString()}</td>
-                    <td class="py-2 px-3 text-center capitalize text-muted-foreground">{bill.payment_method}</td>
+                    <td class="py-2 px-3 text-muted-foreground"
+                      >{bill.customer_name}</td
+                    >
+                    <td
+                      class="py-2 px-3 text-muted-foreground whitespace-nowrap"
+                      >{formatDate(bill.created)}</td
+                    >
+                    <td class="py-2 px-3 text-right font-semibold text-primary"
+                      >₹{Math.round(bill.grand_total).toLocaleString()}</td
+                    >
+                    <td
+                      class="py-2 px-3 text-center capitalize text-muted-foreground"
+                      >{bill.payment_method}</td
+                    >
                     <td class="py-2 px-3 text-center">
-                      <span class="px-2 py-0.5 rounded-full text-xs font-medium {statusColors[bill.payment_status] || 'bg-muted text-muted-foreground'}">
+                      <span
+                        class="px-2 py-0.5 rounded-full text-xs font-medium {statusColors[
+                          bill.payment_status
+                        ] || 'bg-muted text-muted-foreground'}"
+                      >
                         {bill.payment_status}
                       </span>
                     </td>
@@ -382,22 +416,29 @@
                 onclick={() => loadBills(billsPage - 1)}
                 disabled={billsPage <= 1}
                 class="px-3 py-1.5 rounded-lg border border-border text-sm hover:bg-muted transition-colors disabled:opacity-40"
-              >Previous</button>
+                >Previous</button
+              >
               {#each getPages(billsPage, billsTotalPages) as p}
                 {#if p === "..."}
-                  <span class="px-2 py-1.5 text-sm text-muted-foreground">…</span>
+                  <span class="px-2 py-1.5 text-sm text-muted-foreground"
+                    >…</span
+                  >
                 {:else}
                   <button
                     onclick={() => loadBills(p as number)}
-                    class="px-3 py-1.5 rounded-lg border text-sm transition-colors {p === billsPage ? 'bg-primary text-primary-foreground border-primary' : 'border-border hover:bg-muted'}"
-                  >{p}</button>
+                    class="px-3 py-1.5 rounded-lg border text-sm transition-colors {p ===
+                    billsPage
+                      ? 'bg-primary text-primary-foreground border-primary'
+                      : 'border-border hover:bg-muted'}">{p}</button
+                  >
                 {/if}
               {/each}
               <button
                 onclick={() => loadBills(billsPage + 1)}
                 disabled={billsPage >= billsTotalPages}
                 class="px-3 py-1.5 rounded-lg border border-border text-sm hover:bg-muted transition-colors disabled:opacity-40"
-              >Next</button>
+                >Next</button
+              >
             </div>
           {/if}
         {/if}

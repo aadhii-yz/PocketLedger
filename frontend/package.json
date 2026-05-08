@@ -36,7 +36,8 @@
     "lucide-svelte": "^1.0.1",
     "pocketbase": "^0.26.8",
     "svelte-chartjs": "^4.0.1",
-    "tailwind-merge": "^3.5.0"
+    "tailwind-merge": "^3.5.0",
+    "zod": "^3.25.76"
   },
   "overrides": {
     "cookie": "^0.7.0",

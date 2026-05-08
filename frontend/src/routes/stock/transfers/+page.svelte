@@ -23,6 +23,7 @@
   } from "lucide-svelte";
   import BarcodeScanner from "$lib/components/BarcodeScanner.svelte";
   import { pb, customFetch } from "$lib/pb";
+  import { TransferFormSchema, type Location, firstError } from "$lib/schemas";
   import { onMount } from "svelte";
   import { slide } from "svelte/transition";
 
@@ -33,12 +34,6 @@
     { label: "Shop Stock", icon: Store, path: "/stock/shops" },
     { label: "Transfers", icon: ArrowLeftRight, path: "/stock/transfers" },
   ];
-
-  interface Location {
-    id: string;
-    name: string;
-    type: string;
-  }
 
   interface TransferItem {
     product_id: string;
@@ -168,12 +163,18 @@
   async function handleCreateTransfer(e: SubmitEvent) {
     e.preventDefault();
     errorMsg = "";
-    if (formData.from_location === formData.to_location) {
-      errorMsg = "Source and destination locations must be different.";
-      return;
-    }
-    if (formItems.some((item) => !item.product_id || item.quantity <= 0)) {
-      errorMsg = "All items must have a product and a positive quantity.";
+    const parsed = TransferFormSchema.safeParse({
+      from_location: formData.from_location,
+      to_location: formData.to_location,
+      notes: formData.notes || undefined,
+      items: formItems.map((item) => ({
+        product_id: item.product_id,
+        quantity: item.quantity,
+        note: item.note || undefined,
+      })),
+    });
+    if (!parsed.success) {
+      errorMsg = firstError(parsed.error);
       return;
     }
     submitting = true;

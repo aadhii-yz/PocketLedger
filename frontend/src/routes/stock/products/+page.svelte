@@ -25,6 +25,7 @@
   } from "lucide-svelte";
   import { pb, customFetch } from "$lib/pb";
   import { printBarcode, loadPrintSettings } from "$lib/print";
+  import { ProductFormSchema, type Category, firstError } from "$lib/schemas";
   import { onMount } from "svelte";
   import { slide } from "svelte/transition";
 
@@ -55,12 +56,6 @@
     costPrice: number;
     taxRate: number;
     details: Record<string, string>;
-  }
-
-  interface Category {
-    id: string;
-    name: string;
-    description: string;
   }
 
   let products = $state<Product[]>([]);
@@ -279,8 +274,21 @@
 
   async function handleSubmit(e: SubmitEvent) {
     e.preventDefault();
-    saving = true;
     errorMsg = "";
+    const parsed = ProductFormSchema.safeParse({
+      name: formData.name,
+      sku: formData.sku,
+      barcode: formData.barcode || undefined,
+      categoryId: formData.categoryId,
+      sellingPrice: formData.sellingPrice,
+      costPrice: formData.costPrice,
+      taxRate: formData.taxRate,
+    });
+    if (!parsed.success) {
+      errorMsg = firstError(parsed.error);
+      return;
+    }
+    saving = true;
     try {
       if (!formData.barcode) {
         const result = await pb
@@ -291,13 +299,13 @@
         formData.barcode = String(next).padStart(10, "0");
       }
       const data = {
-        name: formData.name,
-        sku: formData.sku,
+        name: parsed.data.name,
+        sku: parsed.data.sku,
         barcode: formData.barcode,
-        category: formData.categoryId,
-        selling_price: Number(formData.sellingPrice),
-        cost_price: Number(formData.costPrice),
-        tax_rate: Number(formData.taxRate),
+        category: parsed.data.categoryId,
+        selling_price: parsed.data.sellingPrice,
+        cost_price: parsed.data.costPrice,
+        tax_rate: parsed.data.taxRate,
         details: Object.fromEntries(
           formData.details
             .filter((d) => d.key.trim())
