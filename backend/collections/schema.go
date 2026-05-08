@@ -142,6 +142,7 @@ func ensureProducts(app core.App) error {
 		col.Fields.Add(&core.NumberField{Name: "cost_price", Required: true})
 		col.Fields.Add(&core.NumberField{Name: "selling_price", Required: true})
 		col.Fields.Add(&core.NumberField{Name: "tax_rate"})
+		col.Fields.Add(&core.JSONField{Name: "details"})
 		col.Fields.Add(&core.FileField{Name: "image", MaxSelect: 1, MaxSize: 5242880})
 		col.Indexes = append(col.Indexes,
 			"CREATE UNIQUE INDEX idx_products_sku ON {{products}} (sku)",
@@ -167,6 +168,17 @@ func ensureProducts(app core.App) error {
 	}
 	if !hasBarcodeIdx {
 		col.Indexes = append(col.Indexes, "CREATE UNIQUE INDEX idx_products_barcode ON {{products}} (barcode) WHERE barcode != ''")
+		changed = true
+	}
+	hasDetailsField := false
+	for _, f := range col.Fields {
+		if f.GetName() == "details" {
+			hasDetailsField = true
+			break
+		}
+	}
+	if !hasDetailsField {
+		col.Fields.Add(&core.JSONField{Name: "details"})
 		changed = true
 	}
 	if !changed {

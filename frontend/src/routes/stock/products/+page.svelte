@@ -54,6 +54,7 @@
     sellingPrice: number;
     costPrice: number;
     taxRate: number;
+    details: Record<string, string>;
   }
 
   interface Category {
@@ -152,6 +153,7 @@
     sellingPrice: "",
     costPrice: "",
     taxRate: "0",
+    details: [] as { key: string; value: string }[],
   });
 
   async function loadData() {
@@ -179,6 +181,7 @@
         sellingPrice: p.selling_price || 0,
         costPrice: p.cost_price || 0,
         taxRate: p.tax_rate || 0,
+        details: p.details || {},
       }));
     } catch (e) {
       errorMsg = "Failed to load products";
@@ -200,6 +203,7 @@
       sellingPrice: "",
       costPrice: "",
       taxRate: "0",
+      details: [],
     };
     editingProduct = null;
     showAddForm = false;
@@ -241,6 +245,7 @@
         selling_price: product.sellingPrice,
         sku: product.sku,
         barcode: product.barcode,
+        details: product.details,
       },
       settings,
     );
@@ -293,6 +298,11 @@
         selling_price: Number(formData.sellingPrice),
         cost_price: Number(formData.costPrice),
         tax_rate: Number(formData.taxRate),
+        details: Object.fromEntries(
+          formData.details
+            .filter((d) => d.key.trim())
+            .map((d) => [d.key.trim(), d.value]),
+        ),
       };
       if (editingProduct) {
         await pb.collection("products").update(editingProduct.id, data);
@@ -319,6 +329,10 @@
       sellingPrice: String(product.sellingPrice),
       costPrice: String(product.costPrice),
       taxRate: String(product.taxRate),
+      details: Object.entries(product.details || {}).map(([key, value]) => ({
+        key,
+        value: String(value),
+      })),
     };
     generatedBarcode = product.barcode;
     showAddForm = true;
@@ -479,6 +493,56 @@
               />
             </div>
 
+            <!-- Product Details (key-value pairs) -->
+            <div class="space-y-3">
+              <div class="flex items-center justify-between">
+                <h4 class="text-sm font-medium">Product Details</h4>
+                <button
+                  type="button"
+                  onclick={() =>
+                    (formData.details = [
+                      ...formData.details,
+                      { key: "", value: "" },
+                    ])}
+                  class="flex items-center gap-1 px-3 py-1.5 text-sm bg-muted hover:bg-muted/80 rounded-lg transition-colors"
+                >
+                  <Plus class="w-3.5 h-3.5" /> Add Row
+                </button>
+              </div>
+              {#if formData.details.length === 0}
+                <p class="text-sm text-muted-foreground italic">
+                  No details yet. Add key-value pairs for attributes like Color,
+                  Size, Material…
+                </p>
+              {:else}
+                <div class="space-y-2">
+                  {#each formData.details as detail, i}
+                    <div class="flex gap-2 items-center">
+                      <Input
+                        placeholder="Key (e.g. Color)"
+                        bind:value={detail.key}
+                      />
+                      <Input
+                        placeholder="Value (e.g. Red)"
+                        bind:value={detail.value}
+                      />
+                      <button
+                        type="button"
+                        onclick={() =>
+                          (formData.details = formData.details.filter(
+                            (_, j) => j !== i,
+                          ))}
+                        class="p-2 hover:bg-muted rounded transition-colors shrink-0"
+                        title="Remove row"
+                      >
+                        <X class="w-4 h-4 text-muted-foreground" />
+                      </button>
+                    </div>
+                  {/each}
+                </div>
+              {/if}
+            </div>
+
             <!-- Barcode Section -->
             <Card class="bg-muted/50">
               <h4 class="mb-4 flex items-center gap-2">
@@ -532,6 +596,11 @@
                         taxRate: Number(formData.taxRate),
                         categoryId: formData.categoryId,
                         category: "",
+                        details: Object.fromEntries(
+                          formData.details
+                            .filter((d) => d.key.trim())
+                            .map((d) => [d.key.trim(), d.value]),
+                        ),
                       } as Product)}
                     disabled={!formData.barcode}>Print</Button
                   >

@@ -169,7 +169,7 @@ export function printReceipt(bill: BillPrintData, settings: PrintSettings): void
 }
 
 export async function printBarcode(
-  product: { id: string; name: string; selling_price: number; sku: string; barcode: string },
+  product: { id: string; name: string; selling_price: number; sku: string; barcode: string; details?: Record<string, string> },
   settings: PrintSettings
 ): Promise<void> {
   const PB_URL = (pb as any).baseURL ?? (pb as any).baseUrl ?? window.location.origin;
@@ -219,6 +219,9 @@ export async function printBarcode(
   .product-name { font-size: 12px; font-weight: bold; margin-top: 3mm; }
   .price { font-size: 16px; font-weight: bold; margin-top: 2mm; }
   .sku { font-size: 9px; color: #555; margin-top: 2mm; }
+  .details { margin-top: 2mm; text-align: left; width: 100%; border-collapse: collapse; }
+  .details td { font-size: 9px; color: #333; padding: 0.5px 0; }
+  .details td:first-child { font-weight: bold; padding-right: 3px; white-space: nowrap; }
   @page { margin: 0; }
   @media print { body { padding: 8mm; } }
 </style>
@@ -233,6 +236,12 @@ export async function printBarcode(
     <p class="product-name">${esc(product.name)}</p>
     ${settings.barcode_show_price ? `<p class="price">&#8377;${fmt(product.selling_price)}</p>` : ''}
     ${settings.barcode_show_sku && product.sku ? `<p class="sku">SKU: ${esc(product.sku)}</p>` : ''}
+    ${(() => {
+      const entries = Object.entries(product.details || {}).filter(([k]) => k.trim());
+      if (!entries.length) return '';
+      const rows = entries.map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(String(v))}</td></tr>`).join('');
+      return `<table class="details">${rows}</table>`;
+    })()}
   </div>
 </body>
 </html>`;
