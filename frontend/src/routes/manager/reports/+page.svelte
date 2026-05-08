@@ -16,7 +16,7 @@
     Users,
   } from "lucide-svelte";
   import { fly } from "svelte/transition";
-  import { Store } from "lucide-svelte";
+  import { Store, Printer } from "lucide-svelte";
 
   const menuItems = [
     { label: "Dashboard", icon: LayoutDashboard, path: "/manager" },
@@ -25,6 +25,7 @@
     { label: "Shop Overview", icon: Store, path: "/stats/overview" },
     { label: "Reports", icon: FileText, path: "/manager/reports" },
     { label: "Users", icon: Users, path: "/manager/users" },
+    { label: "Print Settings", icon: Printer, path: "/manager/print-settings" },
   ];
 
   const MONTHS = [

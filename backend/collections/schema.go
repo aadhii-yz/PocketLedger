@@ -20,6 +20,7 @@ func CreateCollections(app core.App) error {
 		ensureSystemLogs,
 		ensureStockTransfers,
 		ensureStockTransferItems,
+		ensurePrintSettings,
 	} {
 		if err := fn(app); err != nil {
 			return err
@@ -562,6 +563,30 @@ func ensureStockTransferItems(app core.App) error {
 	col.Fields.Add(&core.TextField{Name: "product_name", Required: true})
 	col.Fields.Add(&core.NumberField{Name: "quantity", Required: true})
 	col.Fields.Add(&core.TextField{Name: "note"})
+	return app.Save(col)
+}
+
+func ensurePrintSettings(app core.App) error {
+	if _, err := app.FindCollectionByNameOrId("print_settings"); err == nil {
+		return nil
+	}
+	authOnly := "@request.auth.id != ''"
+	adminManager := "@request.auth.role = 'admin' || @request.auth.role = 'manager'"
+	col := core.NewBaseCollection("print_settings")
+	col.ListRule = &authOnly
+	col.ViewRule = &authOnly
+	col.CreateRule = &adminManager
+	col.UpdateRule = &adminManager
+	col.DeleteRule = new("@request.auth.role = 'admin'")
+	col.Fields.Add(&core.TextField{Name: "shop_name"})
+	col.Fields.Add(&core.TextField{Name: "shop_address"})
+	col.Fields.Add(&core.TextField{Name: "shop_phone"})
+	col.Fields.Add(&core.TextField{Name: "gst_number"})
+	col.Fields.Add(&core.TextField{Name: "receipt_footer"})
+	col.Fields.Add(&core.BoolField{Name: "show_customer_info"})
+	col.Fields.Add(&core.BoolField{Name: "show_tax_breakdown"})
+	col.Fields.Add(&core.BoolField{Name: "barcode_show_sku"})
+	col.Fields.Add(&core.BoolField{Name: "barcode_show_price"})
 	return app.Save(col)
 }
 

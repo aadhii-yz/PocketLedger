@@ -13,8 +13,10 @@
     CreditCard,
     AlertCircle,
     RefreshCw,
+    Printer,
   } from "lucide-svelte";
   import { pb } from "$lib/pb";
+  import { printReceipt, loadPrintSettings } from "$lib/print";
   import { onMount } from "svelte";
   import { slide } from "svelte/transition";
 
@@ -219,6 +221,32 @@
     init();
   });
 
+  async function handlePrintBill(bill: Bill) {
+    if (!bill.items) return;
+    const settings = await loadPrintSettings();
+    printReceipt(
+      {
+        bill_number: bill.bill_number,
+        shop_name: shopName,
+        date: new Date(bill.created),
+        items: bill.items.map((i) => ({
+          name: i.product_name,
+          qty: i.quantity,
+          unit_price: i.unit_price,
+          tax_rate: i.tax_rate,
+        })),
+        subtotal: bill.subtotal,
+        tax_total: bill.tax_total,
+        discount: bill.discount,
+        grand_total: bill.grand_total,
+        payment_method: bill.payment_method,
+        customer_name: bill.customer_name || undefined,
+        customer_phone: bill.customer_phone || undefined,
+      },
+      settings,
+    );
+  }
+
   function formatDate(dateStr: string) {
     return new Date(dateStr).toLocaleString("en-GB", {
       day: "2-digit",
@@ -422,6 +450,16 @@
                   {#if bill.notes}
                     <p class="mt-2 text-xs text-muted-foreground italic">Note: {bill.notes}</p>
                   {/if}
+
+                  <div class="mt-3 pt-3 border-t border-border">
+                    <button
+                      onclick={() => handlePrintBill(bill)}
+                      class="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      <Printer class="w-4 h-4" />
+                      Print Receipt
+                    </button>
+                  </div>
                 </div>
               </div>
             {/if}

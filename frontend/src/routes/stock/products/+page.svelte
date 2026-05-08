@@ -24,6 +24,7 @@
     Unlock,
   } from "lucide-svelte";
   import { pb, customFetch } from "$lib/pb";
+  import { printBarcode, loadPrintSettings } from "$lib/print";
   import { onMount } from "svelte";
   import { slide } from "svelte/transition";
 
@@ -231,9 +232,17 @@
     }
   }
 
-  function handlePrintBarcode(barcode: string, name: string) {
-    alert(
-      `Printing barcode: ${barcode}\nProduct: ${name}\n\nIn production, this would send to a barcode printer.`,
+  async function handlePrintBarcode(product: Product) {
+    const settings = await loadPrintSettings();
+    await printBarcode(
+      {
+        id: product.id,
+        name: product.name,
+        selling_price: product.sellingPrice,
+        sku: product.sku,
+        barcode: product.barcode,
+      },
+      settings,
     );
   }
 
@@ -513,7 +522,17 @@
                     variant="secondary"
                     icon={Printer}
                     onclick={() =>
-                      handlePrintBarcode(formData.barcode, formData.name)}
+                      handlePrintBarcode({
+                        id: editingProduct?.id ?? "",
+                        name: formData.name,
+                        sku: formData.sku,
+                        barcode: formData.barcode,
+                        sellingPrice: Number(formData.sellingPrice),
+                        costPrice: Number(formData.costPrice),
+                        taxRate: Number(formData.taxRate),
+                        categoryId: formData.categoryId,
+                        category: "",
+                      } as Product)}
                     disabled={!formData.barcode}>Print</Button
                   >
                 </div>
@@ -746,8 +765,7 @@
                 <RefreshCw class="w-4 h-4 text-secondary" />
               </button>
               <button
-                onclick={() =>
-                  handlePrintBarcode(row.barcode || row.sku, row.name)}
+                onclick={() => handlePrintBarcode(row)}
                 class="p-2 hover:bg-muted rounded transition-colors"
                 title="Print Barcode"
               >

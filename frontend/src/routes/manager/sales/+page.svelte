@@ -31,7 +31,7 @@
     ArcElement,
   } from "chart.js";
   import { Line, Bar, Pie } from "svelte-chartjs";
-  import { Store } from "lucide-svelte";
+  import { Store, Printer } from "lucide-svelte";
 
   Chart.register(
     Title,
@@ -52,6 +52,7 @@
     { label: "Shop Overview", icon: Store, path: "/stats/overview" },
     { label: "Reports", icon: FileText, path: "/manager/reports" },
     { label: "Users", icon: Users, path: "/manager/users" },
+    { label: "Print Settings", icon: Printer, path: "/manager/print-settings" },
   ];
 
   const COLORS = ["#8b2635", "#d4af37", "#c9b88d"];

@@ -21,6 +21,7 @@
   } from "lucide-svelte";
   import BarcodeScanner from "$lib/components/BarcodeScanner.svelte";
   import { pb, customFetch } from "$lib/pb";
+  import { printReceipt, loadPrintSettings } from "$lib/print";
   import { onMount } from "svelte";
   import { slide, fade } from "svelte/transition";
 
@@ -292,6 +293,34 @@
       });
       billNumber = result.bill_number;
       showReceipt = true;
+
+      // Compute totals from cart for the receipt.
+      const subtotal = cart.reduce((s, item) => s + item.product.price * item.quantity, 0);
+      const taxTotal = cart.reduce(
+        (s, item) => s + item.product.price * item.quantity * (item.product.taxRate / 100),
+        0,
+      );
+      const settings = await loadPrintSettings();
+      printReceipt(
+        {
+          bill_number: result.bill_number,
+          shop_name: shopName,
+          date: new Date(),
+          items: cart.map((c) => ({
+            name: c.product.name,
+            qty: c.quantity,
+            unit_price: c.product.price,
+            tax_rate: c.product.taxRate,
+          })),
+          subtotal,
+          tax_total: taxTotal,
+          discount: 0,
+          grand_total: result.grand_total,
+          payment_method: paymentMethod,
+        },
+        settings,
+      );
+
       products = products.map((p) => {
         const cartItem = cart.find((c) => c.product.id === p.id);
         return cartItem
