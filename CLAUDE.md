@@ -92,7 +92,7 @@ SvelteKit app in **static adapter mode** (prerendered, `fallback: index.html` fo
 **Key files:**
 - `src/lib/schemas.ts` — **Single source of truth for all types.** Zod schemas for every PocketBase collection (snake_case, matching `backend/pb_schema.json`) plus exported `z.infer<>` TypeScript types and form input schemas with validation messages. Do not define PocketBase record types elsewhere — import from here. Also exports `firstError(ZodError)` utility.
 - `src/lib/pb.ts` — PocketBase client singleton, `customFetch` helper for `/api/custom/*` calls (injects auth token), and `mapRole` (PocketBase role → frontend role). `AuthUser` type re-exported from `schemas.ts`.
-- `src/lib/print.ts` — Print utility: `loadPrintSettings()` (fetches singleton from `print_settings` collection), `printReceipt(bill, settings)` (80mm thermal receipt), `printBarcode(product, settings)` (single barcode label). All printing uses the Blob URL approach — `new Blob([html], { type: 'text/html' })` → `URL.createObjectURL` → `window.open` — to avoid deprecated `document.write`. Barcode PNG is fetched from `/api/custom/barcode/{id}` as a blob and embedded as a second Blob URL so the image loads correctly in the new window. `PrintSettings` type re-exported from `schemas.ts`.
+- `src/lib/print.ts` — Print utility: `loadPrintSettings()` (fetches singleton from `print_settings` collection), `printReceipt(bill, settings)` (80mm thermal receipt), `printBarcode(product, settings)` (single barcode label), `listQZPrinters()` (returns all printers visible to QZ Tray). Both print functions are async and try QZ Tray first (if a printer name is configured in settings), then fall back to `window.open` + browser print dialog. QZ Tray is lazy-loaded via dynamic `import('qz-tray')` and uses unsigned security mode (QZ Tray must have "Allow unsigned content" enabled). The connection is cached for the session. Barcode PNG is fetched from `/api/custom/barcode/{id}` and converted to a base64 data URL (works in both QZ Tray's renderer and the fallback window). `PrintSettings` type re-exported from `schemas.ts`.
 - `src/routes/+page.svelte` — login page; on success calls `mapRole` and `goto`s to the role dashboard.
 - Routes are organized by role: `/admin` (logs, users), `/manager` (reports, sales, stock, users, print-settings), `/billing` (history), `/stock` (inventory, products, shops, transfers, warehouse), `/stats` (overview, [shopId]).
 - `src/lib/components/` — shared UI primitives (Button, Card, DataTable, etc.).
@@ -108,7 +108,7 @@ if (!parsed.success) { errorMsg = firstError(parsed.error); return; }
 ```
 Form schemas using `z.coerce.number()` handle `<input type="number">` string values automatically. API responses are typed via `z.infer<>` but never runtime-parsed.
 
-**Key frontend dependencies:** Tailwind CSS v4 (via `@tailwindcss/vite`, theme defined in `src/styles/theme.css`), `lucide-svelte` for icons, `chart.js` + `svelte-chartjs` for stats charts, `date-fns` for date formatting, `zod` for runtime form validation and type inference.
+**Key frontend dependencies:** Tailwind CSS v4 (via `@tailwindcss/vite`, theme defined in `src/styles/theme.css`), `lucide-svelte` for icons, `chart.js` + `svelte-chartjs` for stats charts, `date-fns` for date formatting, `zod` for runtime form validation and type inference, `qz-tray` + `@types/qz-tray` for silent printing via QZ Tray (lazy-loaded, falls back gracefully if not installed).
 
 **Dynamic routes require `+page.ts`:** The root `+layout.ts` sets `prerender = true` and `trailingSlash = 'always'`. Any route with dynamic params (e.g. `/stats/[shopId]/`) needs a companion `+page.ts` with `export const prerender = false; export const ssr = false;` or the build will fail. The `/admin` and `/stats/overview` routes also carry their own `+page.ts` for this reason.
 
@@ -145,7 +145,7 @@ Form schemas using `z.coerce.number()` handle `<input type="number">` string val
 | `stock_transfer_items` | Line items per transfer (product snapshot, quantity) |
 | `bills` | Invoice header scoped to a `shop` (RelationField → locations); payment_method includes `credit` |
 | `bill_items` | Line items per bill (price snapshot at sale time) |
-| `print_settings` | Singleton — shop info and receipt/label template toggles (shop_name, shop_address, shop_phone, gst_number, receipt_footer, show_customer_info, show_tax_breakdown, barcode_show_sku, barcode_show_price). Read by all authenticated users; write by admin/manager only. |
+| `print_settings` | Singleton — shop info, receipt/label template toggles, and QZ Tray printer names (shop_name, shop_address, shop_phone, gst_number, receipt_footer, show_customer_info, show_tax_breakdown, barcode_show_sku, barcode_show_price, receipt_printer, label_printer). Read by all authenticated users; write by admin/manager only. |
 | `system_logs` | Application-level event log (INFO/WARNING/ERROR) |
 
 **Stock is keyed by `(product, location)`** — there is no DB-level unique constraint; uniqueness is enforced in handler logic. `CompleteTransfer` does a find-then-update (not blind insert) for the destination stock record, and returns a 422 if the source has insufficient quantity.

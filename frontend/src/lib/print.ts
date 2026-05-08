@@ -34,6 +34,8 @@ const defaultSettings: PrintSettings = {
   show_tax_breakdown: true,
   barcode_show_sku: true,
   barcode_show_price: true,
+  receipt_printer: '',
+  label_printer: '',
 };
 
 export async function loadPrintSettings(): Promise<PrintSettings> {
@@ -51,6 +53,8 @@ export async function loadPrintSettings(): Promise<PrintSettings> {
         show_tax_breakdown: r['show_tax_breakdown'] !== false,
         barcode_show_sku: r['barcode_show_sku'] !== false,
         barcode_show_price: r['barcode_show_price'] !== false,
+        receipt_printer: r['receipt_printer'] ?? '',
+        label_printer: r['label_printer'] ?? '',
       };
     }
   } catch {
@@ -58,6 +62,84 @@ export async function loadPrintSettings(): Promise<PrintSettings> {
   }
   return { ...defaultSettings };
 }
+
+// ── QZ Tray ───────────────────────────────────────────────────────────────────
+// QZ Tray must have "Allow unsigned content" enabled in its Advanced settings
+// for the unsigned security setup below to work.
+
+import type * as QZTray from 'qz-tray';
+
+let _qz: typeof QZTray | null = null;
+let _qzConnectPromise: Promise<boolean> | null = null;
+
+async function loadQZ(): Promise<typeof QZTray | null> {
+  if (_qz) return _qz;
+  try {
+    _qz = await import('qz-tray');
+    _qz.security.setCertificatePromise((resolve) => resolve(''));
+    _qz.security.setSignatureAlgorithm('SHA512');
+    _qz.security.setSignaturePromise(() => (resolve) => resolve(''));
+    return _qz;
+  } catch {
+    return null;
+  }
+}
+
+async function getQZConnection(): Promise<typeof QZTray | null> {
+  const qz = await loadQZ();
+  if (!qz) return null;
+
+  if (qz.websocket.isActive()) return qz;
+
+  if (_qzConnectPromise) {
+    return (await _qzConnectPromise) ? qz : null;
+  }
+
+  _qzConnectPromise = (async () => {
+    try {
+      await Promise.race([
+        qz.websocket.connect(),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('QZ timeout')), 2000)
+        ),
+      ]);
+      return true;
+    } catch {
+      _qzConnectPromise = null;
+      return false;
+    }
+  })();
+
+  return (await _qzConnectPromise) ? qz : null;
+}
+
+async function printHtmlViaQZ(html: string, printerName: string): Promise<boolean> {
+  try {
+    const qz = await getQZConnection();
+    if (!qz) return false;
+    const found = await qz.printers.find(printerName);
+    const printer: string = Array.isArray(found) ? found[0] : found;
+    if (!printer) return false;
+    const config = qz.configs.create(printer);
+    await qz.print(config, [{ type: 'pixel', format: 'html', flavor: 'plain', data: html }]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function listQZPrinters(): Promise<string[]> {
+  try {
+    const qz = await getQZConnection();
+    if (!qz) return [];
+    const found = await qz.printers.find('');
+    return Array.isArray(found) ? found : found ? [found] : [];
+  } catch {
+    return [];
+  }
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function fmt(n: number): string {
   return n.toFixed(2);
@@ -67,21 +149,63 @@ function fmtDate(d: Date): string {
   return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
-export function printReceipt(bill: BillPrintData, settings: PrintSettings): void {
+function esc(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+function openPrintWindow(html: string): void {
+  const blob = new Blob([html], { type: 'text/html' });
+  const url = URL.createObjectURL(blob);
+  const win = window.open(url, '_blank', 'width=400,height=600');
+  if (!win) {
+    URL.revokeObjectURL(url);
+    return;
+  }
+  win.addEventListener('load', () => {
+    win.print();
+    win.close();
+    URL.revokeObjectURL(url);
+  });
+  setTimeout(() => {
+    if (!win.closed) {
+      win.print();
+      win.close();
+      URL.revokeObjectURL(url);
+    }
+  }, 1500);
+}
+
+// ── Receipt ───────────────────────────────────────────────────────────────────
+
+function buildReceiptHtml(bill: BillPrintData, settings: PrintSettings): string {
   const shopName = settings.shop_name || bill.shop_name || 'Shop';
   const payLabel = bill.payment_method.toUpperCase();
 
-  const itemRows = bill.items.map((item) => {
-    const lineTotal = item.unit_price * item.qty;
-    // Truncate long names to avoid layout breakage on 80mm
-    const name = item.name.length > 20 ? item.name.slice(0, 19) + '…' : item.name;
-    return `<tr>
+  const itemRows = bill.items
+    .map((item) => {
+      const lineTotal = item.unit_price * item.qty;
+      const name = item.name.length > 20 ? item.name.slice(0, 19) + '…' : item.name;
+      return `<tr>
       <td class="item-name">${esc(name)}</td>
       <td class="num">${item.qty}</td>
       <td class="num">${fmt(item.unit_price)}</td>
       <td class="num">${fmt(lineTotal)}</td>
     </tr>`;
-  }).join('');
+    })
+    .join('');
 
   const taxRows = settings.show_tax_breakdown
     ? `<tr><td>Subtotal</td><td class="num">&#8377;${fmt(bill.subtotal)}</td></tr>
@@ -89,12 +213,13 @@ export function printReceipt(bill: BillPrintData, settings: PrintSettings): void
        ${bill.discount > 0 ? `<tr><td>Discount</td><td class="num">-&#8377;${fmt(bill.discount)}</td></tr>` : ''}`
     : '';
 
-  const customerRow = settings.show_customer_info && (bill.customer_name || bill.customer_phone)
-    ? `<div class="divider"></div>
+  const customerRow =
+    settings.show_customer_info && (bill.customer_name || bill.customer_phone)
+      ? `<div class="divider"></div>
        <p>Customer: ${esc(bill.customer_name || '')}${bill.customer_phone ? ' / ' + esc(bill.customer_phone) : ''}</p>`
-    : '';
+      : '';
 
-  const html = `<!DOCTYPE html>
+  return `<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
@@ -155,34 +280,32 @@ export function printReceipt(bill: BillPrintData, settings: PrintSettings): void
   ${settings.receipt_footer ? `<div class="divider"></div><p class="footer">${esc(settings.receipt_footer)}</p>` : ''}
 </body>
 </html>`;
+}
 
+export async function printReceipt(bill: BillPrintData, settings: PrintSettings): Promise<void> {
+  const html = buildReceiptHtml(bill, settings);
+  if (settings.receipt_printer) {
+    const ok = await printHtmlViaQZ(html, settings.receipt_printer);
+    if (ok) return;
+  }
   openPrintWindow(html);
 }
 
-export async function printBarcode(
-  product: { id: string; name: string; selling_price: number; sku: string; barcode: string; details?: Record<string, string> },
-  settings: PrintSettings
-): Promise<void> {
-  const PB_URL = (pb as any).baseURL ?? (pb as any).baseUrl ?? window.location.origin;
-  const token = pb.authStore.token;
+// ── Barcode ───────────────────────────────────────────────────────────────────
 
-  // Fetch the barcode PNG and convert to a blob URL for use in the new window.
-  let imgSrc = '';
-  try {
-    const res = await fetch(`${PB_URL}/api/custom/barcode/${product.id}`, {
-      headers: { Authorization: token },
-    });
-    if (res.ok) {
-      const blob = await res.blob();
-      imgSrc = URL.createObjectURL(blob);
-    }
-  } catch {
-    // fall through — label prints without barcode image
-  }
-
+function buildBarcodeHtml(
+  product: {
+    name: string;
+    selling_price: number;
+    sku: string;
+    barcode: string;
+    details?: Record<string, string>;
+  },
+  settings: PrintSettings,
+  imgSrc: string
+): string {
   const shopName = settings.shop_name;
-
-  const html = `<!DOCTYPE html>
+  return `<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
@@ -220,9 +343,10 @@ export async function printBarcode(
 <body>
   <div class="label">
     ${shopName ? `<p class="shop">${esc(shopName)}</p>` : ''}
-    ${imgSrc
-      ? `<img class="barcode-img" src="${imgSrc}" alt="${esc(product.barcode)}" />`
-      : `<p class="no-barcode">${esc(product.barcode)}</p>`
+    ${
+      imgSrc
+        ? `<img class="barcode-img" src="${imgSrc}" alt="${esc(product.barcode)}" />`
+        : `<p class="no-barcode">${esc(product.barcode)}</p>`
     }
     <p class="product-name">${esc(product.name)}</p>
     ${settings.barcode_show_price ? `<p class="price">&#8377;${fmt(product.selling_price)}</p>` : ''}
@@ -230,54 +354,49 @@ export async function printBarcode(
     ${(() => {
       const entries = Object.entries(product.details || {}).filter(([k]) => k.trim());
       if (!entries.length) return '';
-      const rows = entries.map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(String(v))}</td></tr>`).join('');
+      const rows = entries
+        .map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(String(v))}</td></tr>`)
+        .join('');
       return `<table class="details">${rows}</table>`;
     })()}
   </div>
 </body>
 </html>`;
-
-  // openPrintWindow creates a blob URL for the HTML page and triggers autoPrint.
-  // The barcode imgSrc blob URL is referenced inside the HTML; revoke it after a
-  // generous delay so the new window has time to load the image before we clean up.
-  openPrintWindow(html, true);
-  if (imgSrc) {
-    setTimeout(() => URL.revokeObjectURL(imgSrc), 10000);
-  }
 }
 
-function esc(str: string): string {
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
+export async function printBarcode(
+  product: {
+    id: string;
+    name: string;
+    selling_price: number;
+    sku: string;
+    barcode: string;
+    details?: Record<string, string>;
+  },
+  settings: PrintSettings
+): Promise<void> {
+  const PB_URL = (pb as any).baseURL ?? (pb as any).baseUrl ?? window.location.origin;
+  const token = pb.authStore.token;
 
-function openPrintWindow(html: string, autoPrint = true): Window | null {
-  const blob = new Blob([html], { type: 'text/html' });
-  const url = URL.createObjectURL(blob);
-  const win = window.open(url, '_blank', 'width=400,height=600');
-  if (!win) {
-    URL.revokeObjectURL(url);
-    return null;
-  }
-  if (autoPrint) {
-    win.addEventListener('load', () => {
-      win.print();
-      win.close();
-      URL.revokeObjectURL(url);
+  // Fetch barcode PNG and convert to base64 data URL so it works in both
+  // QZ Tray's HTML renderer and the fallback window.open approach.
+  let imgSrc = '';
+  try {
+    const res = await fetch(`${PB_URL}/api/custom/barcode/${product.id}`, {
+      headers: { Authorization: token },
     });
-    setTimeout(() => {
-      if (!win.closed) {
-        win.print();
-        win.close();
-        URL.revokeObjectURL(url);
-      }
-    }, 1500);
-  } else {
-    // Caller manages printing; revoke blob URL after a generous timeout.
-    setTimeout(() => URL.revokeObjectURL(url), 30000);
+    if (res.ok) {
+      imgSrc = await blobToDataUrl(await res.blob());
+    }
+  } catch {
+    // label prints without barcode image
   }
-  return win;
+
+  const html = buildBarcodeHtml(product, settings, imgSrc);
+
+  if (settings.label_printer) {
+    const ok = await printHtmlViaQZ(html, settings.label_printer);
+    if (ok) return;
+  }
+  openPrintWindow(html);
 }

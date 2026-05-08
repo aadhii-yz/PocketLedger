@@ -579,12 +579,25 @@ func ensureStockTransferItems(app core.App) error {
 }
 
 func ensurePrintSettings(app core.App) error {
-	if _, err := app.FindCollectionByNameOrId("print_settings"); err == nil {
-		return nil
+	col, err := app.FindCollectionByNameOrId("print_settings")
+	if err == nil {
+		changed := false
+		if col.Fields.GetByName("receipt_printer") == nil {
+			col.Fields.Add(&core.TextField{Name: "receipt_printer"})
+			changed = true
+		}
+		if col.Fields.GetByName("label_printer") == nil {
+			col.Fields.Add(&core.TextField{Name: "label_printer"})
+			changed = true
+		}
+		if !changed {
+			return nil
+		}
+		return app.Save(col)
 	}
 	authOnly := "@request.auth.id != ''"
 	adminManager := "@request.auth.role = 'admin' || @request.auth.role = 'manager'"
-	col := core.NewBaseCollection("print_settings")
+	col = core.NewBaseCollection("print_settings")
 	col.ListRule = &authOnly
 	col.ViewRule = &authOnly
 	col.CreateRule = &adminManager
@@ -599,6 +612,8 @@ func ensurePrintSettings(app core.App) error {
 	col.Fields.Add(&core.BoolField{Name: "show_tax_breakdown"})
 	col.Fields.Add(&core.BoolField{Name: "barcode_show_sku"})
 	col.Fields.Add(&core.BoolField{Name: "barcode_show_price"})
+	col.Fields.Add(&core.TextField{Name: "receipt_printer"})
+	col.Fields.Add(&core.TextField{Name: "label_printer"})
 	return app.Save(col)
 }
 

@@ -19,6 +19,7 @@
   } from "lucide-svelte";
   import { pb } from "$lib/pb";
   import { PrintSettingsSchema, firstError } from "$lib/schemas";
+  import { listQZPrinters } from "$lib/print";
   import { onMount } from "svelte";
 
   const menuItems = [
@@ -46,6 +47,22 @@
   let showTaxBreakdown = $state(true);
   let barcodeShowSku = $state(true);
   let barcodeShowPrice = $state(true);
+  let receiptPrinter = $state("");
+  let labelPrinter = $state("");
+
+  let detectingPrinters = $state(false);
+  let detectedPrinters = $state<string[]>([]);
+
+  async function detectPrinters() {
+    detectingPrinters = true;
+    detectedPrinters = [];
+    detectedPrinters = await listQZPrinters();
+    detectingPrinters = false;
+    if (!detectedPrinters.length) {
+      errorMsg = "No printers found. Make sure QZ Tray is running.";
+      setTimeout(() => (errorMsg = ""), 4000);
+    }
+  }
 
   onMount(async () => {
     try {
@@ -62,6 +79,8 @@
         showTaxBreakdown = r["show_tax_breakdown"] !== false;
         barcodeShowSku = r["barcode_show_sku"] !== false;
         barcodeShowPrice = r["barcode_show_price"] !== false;
+        receiptPrinter = r["receipt_printer"] ?? "";
+        labelPrinter = r["label_printer"] ?? "";
       }
     } catch {
       // no existing settings — defaults are already set
@@ -83,6 +102,8 @@
       show_tax_breakdown: showTaxBreakdown,
       barcode_show_sku: barcodeShowSku,
       barcode_show_price: barcodeShowPrice,
+      receipt_printer: receiptPrinter,
+      label_printer: labelPrinter,
     });
     if (!parsed.success) {
       errorMsg = firstError(parsed.error);
@@ -244,6 +265,63 @@
                 />
                 <span class="text-sm font-medium">Show SKU on label</span>
               </label>
+            </div>
+          </Card>
+
+          <!-- QZ Tray Printer Configuration -->
+          <Card>
+            <div class="p-6 space-y-4">
+              <div class="flex items-start justify-between gap-4">
+                <div>
+                  <h2 class="font-semibold text-lg">Printer Configuration</h2>
+                  <p class="text-sm text-muted-foreground mt-0.5">
+                    Requires <a href="https://qz.io" target="_blank" class="underline">QZ Tray</a> installed on this device for silent printing.
+                    Leave blank to use the browser print dialog instead.
+                  </p>
+                </div>
+                <Button
+                  onclick={detectPrinters}
+                  disabled={detectingPrinters}
+                  class="shrink-0 text-sm"
+                >
+                  {detectingPrinters ? "Detecting…" : "Detect Printers"}
+                </Button>
+              </div>
+
+              {#if detectedPrinters.length > 0}
+                <datalist id="printer-list">
+                  {#each detectedPrinters as p}
+                    <option value={p}></option>
+                  {/each}
+                </datalist>
+                <p class="text-xs text-muted-foreground">
+                  Found {detectedPrinters.length} printer{detectedPrinters.length !== 1 ? "s" : ""}. Click a field and type to autocomplete.
+                </p>
+              {/if}
+
+              <div>
+                <label class="block text-sm font-medium mb-1" for="receipt-printer">
+                  Receipt Printer (TVS RP 3200 Lite)
+                </label>
+                <Input
+                  id="receipt-printer"
+                  bind:value={receiptPrinter}
+                  placeholder="Exact printer name from QZ Tray"
+                  list="printer-list"
+                />
+              </div>
+
+              <div>
+                <label class="block text-sm font-medium mb-1" for="label-printer">
+                  Label / Barcode Printer (TVS LP 46 Neo)
+                </label>
+                <Input
+                  id="label-printer"
+                  bind:value={labelPrinter}
+                  placeholder="Exact printer name from QZ Tray"
+                  list="printer-list"
+                />
+              </div>
             </div>
           </Card>
 

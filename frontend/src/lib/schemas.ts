@@ -129,6 +129,8 @@ export const PrintSettingsSchema = z.object({
   show_tax_breakdown: z.boolean().optional().default(false),
   barcode_show_sku: z.boolean().optional().default(false),
   barcode_show_price: z.boolean().optional().default(false),
+  receipt_printer: z.string().optional().default(''),
+  label_printer: z.string().optional().default(''),
 });
 
 export const SystemLogSchema = z.object({

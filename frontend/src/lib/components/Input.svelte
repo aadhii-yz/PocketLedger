@@ -9,6 +9,7 @@
     icon?: import("svelte").Snippet;
     required?: boolean;
     disabled?: boolean;
+    list?: string;
   }
 
   let {
@@ -21,6 +22,7 @@
     icon,
     required = false,
     disabled = false,
+    list,
   }: Props = $props();
 
   let focused = $state(false);
@@ -57,6 +59,7 @@
       placeholder={isActive ? placeholder : ""}
       {required}
       {disabled}
+      {list}
       class="w-full px-4 {icon
         ? 'pl-10'
         : ''} pt-6 pb-2 bg-input-background border border-border rounded-lg outline-none focus:ring-2 focus:ring-ring transition-all disabled:opacity-50 disabled:cursor-not-allowed"
