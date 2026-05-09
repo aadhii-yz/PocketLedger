@@ -113,6 +113,26 @@ async function getQZConnection(): Promise<typeof QZTray | null> {
   return (await _qzConnectPromise) ? qz : null;
 }
 
+async function printRawViaQZ(data: Uint8Array, printerName: string): Promise<boolean> {
+  try {
+    const qz = await getQZConnection();
+    if (!qz) { console.warn('[print] QZ Tray not connected'); return false; }
+    const found = await qz.printers.find(printerName);
+    const printer: string = Array.isArray(found) ? found[0] : found;
+    if (!printer) { console.warn('[print] Printer not found:', printerName); return false; }
+    const config = qz.configs.create(printer, { forceRaw: true });
+    // Binary ESC/POS data must be base64-encoded — 'plain' flavor can't carry binary over JSON/WebSocket
+    let binary = '';
+    for (let i = 0; i < data.length; i++) binary += String.fromCharCode(data[i]);
+    const b64 = btoa(binary);
+    await qz.print(config, [{ type: 'raw', format: 'command', flavor: 'base64', data: b64 }]);
+    return true;
+  } catch (err) {
+    console.error('[print] QZ raw print failed:', err);
+    return false;
+  }
+}
+
 async function printHtmlViaQZ(html: string, printerName: string): Promise<boolean> {
   try {
     const qz = await getQZConnection();
@@ -121,7 +141,7 @@ async function printHtmlViaQZ(html: string, printerName: string): Promise<boolea
     const printer: string = Array.isArray(found) ? found[0] : found;
     if (!printer) return false;
     const config = qz.configs.create(printer);
-    await qz.print(config, [{ type: 'pixel', format: 'html', flavor: 'plain', data: html }]);
+    await qz.print(config, [{ type: 'pixel', format: 'html', flavor: 'file', data: html }]);
     return true;
   } catch {
     return false;
@@ -137,6 +157,101 @@ export async function listQZPrinters(): Promise<string[]> {
   } catch {
     return [];
   }
+}
+
+// ── ESC/POS ───────────────────────────────────────────────────────────────────
+
+const E = {
+  INIT: [0x1b, 0x40],
+  CENTER: [0x1b, 0x61, 0x01],
+  LEFT: [0x1b, 0x61, 0x00],
+  BOLD_ON: [0x1b, 0x45, 0x01],
+  BOLD_OFF: [0x1b, 0x45, 0x00],
+  DBLW_ON: [0x1b, 0x21, 0x20],
+  DBLW_OFF: [0x1b, 0x21, 0x00],
+  CUT: [0x1d, 0x56, 0x00],
+  LF: [0x0a],
+};
+
+class EscPos {
+  private buf: number[] = [];
+
+  cmd(...bytes: number[][]): this { bytes.forEach(b => this.buf.push(...b)); return this; }
+
+  txt(s: string): this {
+    for (let i = 0; i < s.length; i++) {
+      const c = s.charCodeAt(i);
+      this.buf.push(c < 128 ? c : 0x3f);
+    }
+    return this;
+  }
+
+  line(s = ''): this { return this.txt(s).cmd(E.LF); }
+
+  sep(width = 42): this { return this.line('-'.repeat(width)); }
+
+  build(): Uint8Array { return new Uint8Array(this.buf); }
+}
+
+const COL = 42;
+
+function rpad(s: string, w: number): string { return s.slice(0, w).padEnd(w); }
+function lpad(s: string, w: number): string { return s.slice(0, w).padStart(w); }
+
+function buildReceiptEscPos(bill: BillPrintData, settings: PrintSettings): Uint8Array {
+  const shopName = settings.shop_name || bill.shop_name || 'Shop';
+  const p = new EscPos();
+
+  p.cmd(E.INIT);
+
+  // Header
+  p.cmd(E.CENTER, E.BOLD_ON, E.DBLW_ON).line(shopName.slice(0, 21)).cmd(E.DBLW_OFF, E.BOLD_OFF);
+  if (settings.shop_address) p.cmd(E.CENTER).line(settings.shop_address);
+  if (settings.shop_phone) p.cmd(E.CENTER).line('Ph: ' + settings.shop_phone);
+  if (settings.gst_number) p.cmd(E.CENTER).line('GST: ' + settings.gst_number);
+
+  p.cmd(E.LEFT).sep();
+  p.line('Date   : ' + fmtDate(bill.date));
+  p.line('Bill No: ' + bill.bill_number);
+  p.sep();
+
+  // Items header  (20 | 4 | 9 | 9 = 42)
+  const NW = 20, QW = 4, RW = 9, AW = 9;
+  p.cmd(E.BOLD_ON).txt(rpad('Item', NW)).txt(lpad('Qty', QW)).txt(lpad('Rate', RW)).line(lpad('Amt', AW)).cmd(E.BOLD_OFF);
+  p.sep();
+
+  for (const item of bill.items) {
+    const name = item.name.length > NW ? item.name.slice(0, NW - 1) + '>' : item.name;
+    const total = item.unit_price * item.qty;
+    p.txt(rpad(name, NW)).txt(lpad(String(item.qty), QW)).txt(lpad(fmt(item.unit_price), RW)).line(lpad(fmt(total), AW));
+  }
+
+  p.sep();
+
+  // Totals
+  const LW = COL - 10;
+  if (settings.show_tax_breakdown) {
+    p.txt(rpad('Subtotal', LW)).line(lpad('Rs.' + fmt(bill.subtotal), 10));
+    p.txt(rpad('GST', LW)).line(lpad('Rs.' + fmt(bill.tax_total), 10));
+    if (bill.discount > 0)
+      p.txt(rpad('Discount', LW)).line(lpad('-Rs.' + fmt(bill.discount), 10));
+  }
+  p.cmd(E.BOLD_ON).txt(rpad('TOTAL', LW)).line(lpad('Rs.' + fmt(bill.grand_total), 10)).cmd(E.BOLD_OFF);
+
+  p.sep();
+  p.line('Payment: ' + bill.payment_method.toUpperCase());
+
+  if (settings.show_customer_info && (bill.customer_name || bill.customer_phone)) {
+    const cust = [bill.customer_name, bill.customer_phone].filter(Boolean).join(' / ');
+    p.sep().line('Customer: ' + cust);
+  }
+
+  if (settings.receipt_footer) {
+    p.sep().cmd(E.CENTER).line(settings.receipt_footer);
+  }
+
+  p.cmd(E.LEFT).line().line().line().cmd(E.CUT);
+  return p.build();
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -283,12 +398,12 @@ function buildReceiptHtml(bill: BillPrintData, settings: PrintSettings): string 
 }
 
 export async function printReceipt(bill: BillPrintData, settings: PrintSettings): Promise<void> {
-  const html = buildReceiptHtml(bill, settings);
   if (settings.receipt_printer) {
-    const ok = await printHtmlViaQZ(html, settings.receipt_printer);
+    const escpos = buildReceiptEscPos(bill, settings);
+    const ok = await printRawViaQZ(escpos, settings.receipt_printer);
     if (ok) return;
   }
-  openPrintWindow(html);
+  openPrintWindow(buildReceiptHtml(bill, settings));
 }
 
 // ── Barcode ───────────────────────────────────────────────────────────────────
@@ -343,10 +458,9 @@ function buildBarcodeHtml(
 <body>
   <div class="label">
     ${shopName ? `<p class="shop">${esc(shopName)}</p>` : ''}
-    ${
-      imgSrc
-        ? `<img class="barcode-img" src="${imgSrc}" alt="${esc(product.barcode)}" />`
-        : `<p class="no-barcode">${esc(product.barcode)}</p>`
+    ${imgSrc
+      ? `<img class="barcode-img" src="${imgSrc}" alt="${esc(product.barcode)}" />`
+      : `<p class="no-barcode">${esc(product.barcode)}</p>`
     }
     <p class="product-name">${esc(product.name)}</p>
     ${settings.barcode_show_price ? `<p class="price">&#8377;${fmt(product.selling_price)}</p>` : ''}
