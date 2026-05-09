@@ -92,7 +92,7 @@ SvelteKit app in **static adapter mode** (prerendered, `fallback: index.html` fo
 **Key files:**
 - `src/lib/schemas.ts` — **Single source of truth for all types.** Zod schemas for every PocketBase collection (snake_case, matching `backend/pb_schema.json`) plus exported `z.infer<>` TypeScript types and form input schemas with validation messages. Do not define PocketBase record types elsewhere — import from here. Also exports `firstError(ZodError)` utility.
 - `src/lib/pb.ts` — PocketBase client singleton, `customFetch` helper for `/api/custom/*` calls (injects auth token), `mapRole` (PocketBase role → frontend role), and the exported `PB_URL` constant. `AuthUser` type re-exported from `schemas.ts`. Always import `PB_URL` from here — never re-derive it from the `pb` instance.
-- `src/lib/print.ts` — Print utility: `loadPrintSettings()` (fetches singleton from `print_settings` collection), `printReceipt(bill, settings)` (80mm thermal receipt), `printBarcode(product, settings)` (single barcode label), `listQZPrinters()` (returns all printers visible to QZ Tray). Both print functions are async and try QZ Tray first (if a printer name is configured in settings), then fall back to `window.open` + browser print dialog. QZ Tray is lazy-loaded via dynamic `import('qz-tray')` and uses unsigned security mode (QZ Tray must have "Allow unsigned content" enabled). The connection is cached for the session. Barcode PNG is fetched from `/api/custom/barcode/{id}` and converted to a base64 data URL (works in both QZ Tray's renderer and the fallback window). `PrintSettings` type re-exported from `schemas.ts`.
+- `src/lib/print.ts` — Print utility: `loadPrintSettings()` (fetches singleton from `print_settings` collection), `printReceipt(bill, settings)` (80mm thermal receipt), `printBarcode(product, settings)` (single barcode label), `listQZPrinters()` (returns all printers visible to QZ Tray). Both print functions follow a **three-step fallback chain**: (1) companion app at `localhost:8765` — 800 ms availability check, then POST; (2) QZ Tray raw/HTML print (if a printer name is set in `print_settings`); (3) `window.open` + browser print dialog. QZ Tray is lazy-loaded via dynamic `import('qz-tray')` and uses unsigned security mode. Barcode PNG is fetched from `/api/custom/barcode/{id}` and converted to a base64 data URL. `PrintSettings` type re-exported from `schemas.ts`.
 - `src/routes/+page.svelte` — login page; on success calls `mapRole` and `goto`s to the role dashboard.
 - Routes are organized by role: `/admin` (logs, users), `/manager` (reports, sales, stock, users, print-settings), `/billing` (history), `/stock` (inventory, products, shops, transfers, warehouse), `/stats` (overview, [shopId]).
 - `src/lib/components/` — shared UI primitives (Button, Card, DataTable, etc.).
@@ -130,6 +130,29 @@ Form schemas using `z.coerce.number()` handle `<input type="number">` string val
 - The billing page (`/billing`) disables checkout when offline; `OfflineIndicator.svelte` shows a fixed-bottom banner on all routes via the root layout.
 
 **Camera barcode scanning (`BarcodeScanner.svelte`):** Renders a camera button only on touch devices (`navigator.maxTouchPoints > 0`). On tap, opens a full-screen camera modal. Uses the native `BarcodeDetector` API on Android (zero extra JS); falls back to dynamically imported `@zxing/browser` on iOS (lazy-loaded only on first use). Integrated in billing, stock inventory, and stock transfers pages. `@zxing/browser` requires `@zxing/library` as a peer dep — both must be installed explicitly (`npm install @zxing/browser @zxing/library`), since npm does not auto-install peer deps. Camera access requires HTTPS or `localhost`; plain HTTP on a local IP will be blocked by Android Chrome.
+
+### Companion App (`companion_app/`)
+
+Flutter app that runs a local HTTP server on `localhost:8765`, bridging the SvelteKit PWA to thermal printers via raw TCP. Required because the backend is cloud-hosted and cannot reach printers on the shop/warehouse LAN, and browsers cannot open raw TCP sockets.
+
+**Why it exists:** Cloud backend → can't reach LAN printers. Browser PWA → can't open raw TCP. Companion app runs locally on the same device/network as the printers and accepts print jobs from the PWA over localhost.
+
+**Printer support:**
+- `lib/services/tspl_printer.dart` — TSPL commands for **TVS LP 46 dlite** (barcode labels, 50 mm × 30 mm, 203 DPI). Sends over TCP to the printer's WiFi IP:9100.
+- `lib/services/escpos_printer.dart` — ESC/POS bytes for **TVS RP 3230** (80 mm thermal receipt). Same TCP approach.
+
+**HTTP API (all on `localhost:8765`):**
+- `GET /status` → `{ ok: true }` — used by `print.ts` as the availability check
+- `POST /print/barcode` — body: product fields + `show_sku`, `show_price`, `shop_name`
+- `POST /print/receipt` — body: all `BillPrintData` fields merged with `PrintSettings` fields
+
+Printer IPs are stored in the companion app's own `SharedPreferences` (configured via its settings screen), not passed in the request body.
+
+**Android background service:** `lib/services/background_service.dart` uses `flutter_background_service` to run the HTTP server in a foreground-service isolate so Android does not kill it while the worker uses the PWA in Chrome. The UI isolate notifies the service isolate to reload settings via `service.invoke('reload_settings')` after a save.
+
+**Building:** Triggered manually via GitHub Actions (`.github/workflows/build-companion.yml`). The workflow runs `flutter create . --no-pub` to generate platform boilerplate, restores our `lib/` and `pubspec.yaml` via `git checkout`, runs `patch_manifest.py` to inject the foreground-service permissions into `AndroidManifest.xml`, then builds APK (ubuntu runner) and Windows exe (windows runner). Artifacts are retained for 30 days.
+
+**First-time device setup:** Open companion app → enter barcode printer IP and receipt printer IP → Save. Minimise; keep running in background. The PWA detects it via the `/status` ping and uses it automatically.
 
 ### Data model summary
 
