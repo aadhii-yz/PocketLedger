@@ -63,6 +63,93 @@ export async function loadPrintSettings(): Promise<PrintSettings> {
   return { ...defaultSettings };
 }
 
+// ── Companion app (localhost:8765) ────────────────────────────────────────────
+// Tries the PocketLedger Print companion app first. Returns true if it handled
+// the job, false if not running (falls through to QZ Tray / browser print).
+
+const COMPANION_URL = 'http://localhost:8765';
+
+async function _companionAvailable(): Promise<boolean> {
+  try {
+    const res = await fetch(`${COMPANION_URL}/status`, {
+      signal: AbortSignal.timeout(800),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function _companionPrintBarcode(
+  product: { name: string; sku: string; barcode: string; selling_price: number; details?: Record<string, string> },
+  settings: PrintSettings
+): Promise<boolean> {
+  if (!(await _companionAvailable())) return false;
+  try {
+    const res = await fetch(`${COMPANION_URL}/print/barcode`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: product.name,
+        sku: product.sku,
+        barcode: product.barcode,
+        selling_price: product.selling_price,
+        details: product.details ?? {},
+        show_sku: settings.barcode_show_sku,
+        show_price: settings.barcode_show_price,
+        shop_name: settings.shop_name,
+      }),
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: res.statusText }));
+      console.warn('[print] Companion barcode error:', err);
+    }
+    return res.ok;
+  } catch (err) {
+    console.warn('[print] Companion barcode failed:', err);
+    return false;
+  }
+}
+
+async function _companionPrintReceipt(bill: BillPrintData, settings: PrintSettings): Promise<boolean> {
+  if (!(await _companionAvailable())) return false;
+  try {
+    const res = await fetch(`${COMPANION_URL}/print/receipt`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        bill_number: bill.bill_number,
+        shop_name: settings.shop_name || bill.shop_name,
+        shop_address: settings.shop_address,
+        shop_phone: settings.shop_phone,
+        gst_number: settings.gst_number,
+        receipt_footer: settings.receipt_footer,
+        show_customer_info: settings.show_customer_info,
+        show_tax_breakdown: settings.show_tax_breakdown,
+        date: bill.date.toISOString(),
+        items: bill.items,
+        subtotal: bill.subtotal,
+        tax_total: bill.tax_total,
+        discount: bill.discount,
+        grand_total: bill.grand_total,
+        payment_method: bill.payment_method,
+        customer_name: bill.customer_name ?? '',
+        customer_phone: bill.customer_phone ?? '',
+      }),
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: res.statusText }));
+      console.warn('[print] Companion receipt error:', err);
+    }
+    return res.ok;
+  } catch (err) {
+    console.warn('[print] Companion receipt failed:', err);
+    return false;
+  }
+}
+
 // ── QZ Tray ───────────────────────────────────────────────────────────────────
 // QZ Tray must have "Allow unsigned content" enabled in its Advanced settings
 // for the unsigned security setup below to work.
@@ -398,6 +485,7 @@ function buildReceiptHtml(bill: BillPrintData, settings: PrintSettings): string 
 }
 
 export async function printReceipt(bill: BillPrintData, settings: PrintSettings): Promise<void> {
+  if (await _companionPrintReceipt(bill, settings)) return;
   if (settings.receipt_printer) {
     const escpos = buildReceiptEscPos(bill, settings);
     const ok = await printRawViaQZ(escpos, settings.receipt_printer);
@@ -489,6 +577,8 @@ export async function printBarcode(
   },
   settings: PrintSettings
 ): Promise<void> {
+  if (await _companionPrintBarcode(product, settings)) return;
+
   const token = pb.authStore.token;
 
   // Fetch barcode PNG and convert to base64 data URL so it works in both

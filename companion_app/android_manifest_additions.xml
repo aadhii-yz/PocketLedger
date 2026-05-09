@@ -1,0 +1,18 @@
+<!--
+  Add these lines to companion_app/android/app/src/main/AndroidManifest.xml
+  AFTER flutter create generates the file.
+
+  1. Inside <manifest> (before <application>):
+-->
+<uses-permission android:name="android.permission.INTERNET"/>
+<uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+<uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
+<uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+
+<!--
+  2. Inside <application> (anywhere inside it):
+-->
+<service
+    android:name="id.flutter.flutter_background_service.BackgroundService"
+    android:foregroundServiceType="dataSync"
+    android:exported="false"/>
