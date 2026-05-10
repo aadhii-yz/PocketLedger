@@ -13,12 +13,14 @@ dependencies:
   shelf_router: ^1.1.4
   shared_preferences: ^2.3.2
   flutter_background_service: ^5.0.5
-  window_manager: ^0.3.9
+  flutter_local_notifications: ^18.0.1
+  permission_handler: ^11.3.1
+  window_manager: ^0.5.1
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^4.0.0
+  flutter_lints: ^6.0.0
 
 flutter:
   uses-material-design: true

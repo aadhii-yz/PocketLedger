@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'services/settings_service.dart';
 import 'services/background_service.dart';
 import 'screens/home_screen.dart';
@@ -9,6 +10,9 @@ void main() async {
   await SettingsService.instance.load();
 
   if (Platform.isAndroid) {
+    // Android 13+ (API 33+) requires POST_NOTIFICATIONS to be granted at
+    // runtime before a foreground service can post its persistent notification.
+    await Permission.notification.request();
     await initBackgroundService();
   }
 

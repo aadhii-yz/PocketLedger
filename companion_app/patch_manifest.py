@@ -14,6 +14,7 @@ permissions = (
     '    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>\n'
     '    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>\n'
     '    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>\n'
+    '    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>\n'
     '    '
 )
 
