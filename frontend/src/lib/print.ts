@@ -63,9 +63,65 @@ export async function loadPrintSettings(): Promise<PrintSettings> {
   return { ...defaultSettings };
 }
 
+// ── Flutter WebView JS channel ────────────────────────────────────────────────
+// When the PWA runs inside the companion app's WebView, Flutter injects
+// window.FlutterPrint. postMessage() is synchronous and always succeeds here
+// (TCP errors are logged inside Dart); return true immediately so we skip the
+// localhost HTTP ping and QZ Tray entirely.
+
+type FlutterPrintChannel = { postMessage: (message: string) => void };
+const _flutter = (): FlutterPrintChannel | undefined =>
+  (window as unknown as { FlutterPrint?: FlutterPrintChannel }).FlutterPrint;
+
+function _flutterPrintBarcode(
+  product: { name: string; sku: string; barcode: string; selling_price: number; details?: Record<string, string> },
+  settings: PrintSettings
+): boolean {
+  const ch = _flutter();
+  if (!ch) return false;
+  ch.postMessage(JSON.stringify({
+    type: 'barcode',
+    name: product.name,
+    sku: product.sku,
+    barcode: product.barcode,
+    selling_price: product.selling_price,
+    details: product.details ?? {},
+    show_sku: settings.barcode_show_sku,
+    show_price: settings.barcode_show_price,
+    shop_name: settings.shop_name,
+  }));
+  return true;
+}
+
+function _flutterPrintReceipt(bill: BillPrintData, settings: PrintSettings): boolean {
+  const ch = _flutter();
+  if (!ch) return false;
+  ch.postMessage(JSON.stringify({
+    type: 'receipt',
+    bill_number: bill.bill_number,
+    shop_name: settings.shop_name || bill.shop_name,
+    shop_address: settings.shop_address,
+    shop_phone: settings.shop_phone,
+    gst_number: settings.gst_number,
+    receipt_footer: settings.receipt_footer,
+    show_customer_info: settings.show_customer_info,
+    show_tax_breakdown: settings.show_tax_breakdown,
+    date: bill.date.toISOString(),
+    items: bill.items,
+    subtotal: bill.subtotal,
+    tax_total: bill.tax_total,
+    discount: bill.discount,
+    grand_total: bill.grand_total,
+    payment_method: bill.payment_method,
+    customer_name: bill.customer_name ?? '',
+    customer_phone: bill.customer_phone ?? '',
+  }));
+  return true;
+}
+
 // ── Companion app (localhost:8765) ────────────────────────────────────────────
-// Tries the PocketLedger Print companion app first. Returns true if it handled
-// the job, false if not running (falls through to QZ Tray / browser print).
+// Tries the PocketLedger Print companion app HTTP server next. Returns true if
+// it handled the job, false if not running (falls through to QZ Tray / browser).
 
 const COMPANION_URL = 'http://localhost:8765';
 
@@ -485,6 +541,7 @@ function buildReceiptHtml(bill: BillPrintData, settings: PrintSettings): string 
 }
 
 export async function printReceipt(bill: BillPrintData, settings: PrintSettings): Promise<void> {
+  if (_flutterPrintReceipt(bill, settings)) return;
   if (await _companionPrintReceipt(bill, settings)) return;
   if (settings.receipt_printer) {
     const escpos = buildReceiptEscPos(bill, settings);
@@ -577,6 +634,7 @@ export async function printBarcode(
   },
   settings: PrintSettings
 ): Promise<void> {
+  if (_flutterPrintBarcode(product, settings)) return;
   if (await _companionPrintBarcode(product, settings)) return;
 
   const token = pb.authStore.token;

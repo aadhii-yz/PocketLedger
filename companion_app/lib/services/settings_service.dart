@@ -4,6 +4,7 @@ class SettingsService {
   static final SettingsService instance = SettingsService._();
   SettingsService._();
 
+  String pocketledgerUrl = '';
   String barcodePrinterIp = '';
   int barcodePrinterPort = 9100;
   String receiptPrinterIp = '';
@@ -12,6 +13,7 @@ class SettingsService {
 
   Future<void> load() async {
     final p = await SharedPreferences.getInstance();
+    pocketledgerUrl = p.getString('pocketledger_url') ?? '';
     barcodePrinterIp = p.getString('barcode_ip') ?? '';
     barcodePrinterPort = p.getInt('barcode_port') ?? 9100;
     receiptPrinterIp = p.getString('receipt_ip') ?? '';
@@ -21,6 +23,7 @@ class SettingsService {
 
   Future<void> save() async {
     final p = await SharedPreferences.getInstance();
+    await p.setString('pocketledger_url', pocketledgerUrl);
     await p.setString('barcode_ip', barcodePrinterIp);
     await p.setInt('barcode_port', barcodePrinterPort);
     await p.setString('receipt_ip', receiptPrinterIp);

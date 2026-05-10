@@ -5,13 +5,15 @@ import '../services/settings_service.dart';
 import '../services/print_server.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  final VoidCallback? onSaved;
+  const HomeScreen({super.key, this.onSaved});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  final _urlCtrl = TextEditingController();
   final _barcodeIpCtrl = TextEditingController();
   final _barcodePortCtrl = TextEditingController();
   final _receiptIpCtrl = TextEditingController();
@@ -24,13 +26,13 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     final s = SettingsService.instance;
+    _urlCtrl.text = s.pocketledgerUrl;
     _barcodeIpCtrl.text = s.barcodePrinterIp;
     _barcodePortCtrl.text = s.barcodePrinterPort.toString();
     _receiptIpCtrl.text = s.receiptPrinterIp;
     _receiptPortCtrl.text = s.receiptPrinterPort.toString();
 
     if (Platform.isAndroid) {
-      // Server runs in background service isolate — just show status
       setState(() {
         _serverRunning = true;
         _statusMsg = 'Print service active on localhost:${s.serverPort}';
@@ -42,6 +44,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    _urlCtrl.dispose();
     _barcodeIpCtrl.dispose();
     _barcodePortCtrl.dispose();
     _receiptIpCtrl.dispose();
@@ -66,6 +69,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _save() async {
     final s = SettingsService.instance;
+    s.pocketledgerUrl = _urlCtrl.text.trim();
     s.barcodePrinterIp = _barcodeIpCtrl.text.trim();
     s.barcodePrinterPort = int.tryParse(_barcodePortCtrl.text.trim()) ?? 9100;
     s.receiptPrinterIp = _receiptIpCtrl.text.trim();
@@ -73,7 +77,6 @@ class _HomeScreenState extends State<HomeScreen> {
     await s.save();
 
     if (Platform.isAndroid) {
-      // Notify background service isolate to re-read SharedPreferences
       FlutterBackgroundService().invoke('reload_settings');
     }
 
@@ -81,6 +84,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Settings saved')),
       );
+      widget.onSaved?.call();
     }
   }
 
@@ -88,7 +92,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('PocketLedger Print'),
+        title: const Text('Settings'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),
       body: SingleChildScrollView(
@@ -96,7 +100,7 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Status
+            // Server status
             Card(
               color: _serverRunning ? Colors.green.shade50 : Colors.red.shade50,
               child: ListTile(
@@ -111,17 +115,23 @@ class _HomeScreenState extends State<HomeScreen> {
                 subtitle: Text(_statusMsg),
               ),
             ),
+            const SizedBox(height: 24),
+
+            // PocketLedger URL
+            const Text(
+              'PocketLedger',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
             const SizedBox(height: 8),
-            Card(
-              color: Colors.blue.shade50,
-              child: const Padding(
-                padding: EdgeInsets.all(12),
-                child: Text(
-                  'Keep this app open (or minimised) while using the PocketLedger web app. '
-                  'The web app will print silently through this service.',
-                  style: TextStyle(fontSize: 13),
-                ),
+            TextField(
+              controller: _urlCtrl,
+              decoration: const InputDecoration(
+                labelText: 'App URL',
+                hintText: 'https://your-app.pockethost.io',
+                border: OutlineInputBorder(),
               ),
+              keyboardType: TextInputType.url,
+              autocorrect: false,
             ),
             const SizedBox(height: 24),
 
@@ -184,9 +194,9 @@ class _HomeScreenState extends State<HomeScreen> {
               child: FilledButton.icon(
                 onPressed: _save,
                 icon: const Icon(Icons.save),
-                label: const Text('Save Settings'),
+                label: const Text('Save & Open App'),
               ),
-            ),
+        ),
           ],
         ),
       ),
