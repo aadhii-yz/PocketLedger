@@ -397,12 +397,115 @@ function buildReceiptHtml(bill: BillPrintData, settings: PrintSettings): string 
 </html>`;
 }
 
+// ── Companion app (Tauri IPC + HTTP fallback) ─────────────────────────────────
+
+type TauriCore = { invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> };
+
+function tauriCore(): TauriCore | null {
+  return (window as unknown as { __TAURI__?: { core: TauriCore } }).__TAURI__?.core ?? null;
+}
+
+async function companionAvailable(): Promise<boolean> {
+  try {
+    const res = await fetch('http://localhost:8765/status', { signal: AbortSignal.timeout(800) });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function _companionPrintReceipt(
+  bill: BillPrintData,
+  settings: PrintSettings
+): Promise<boolean> {
+  try {
+    const res = await fetch('http://localhost:8765/print/receipt', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(_receiptPayload(bill, settings)),
+      signal: AbortSignal.timeout(5000),
+    });
+    return res.ok;
+  } catch (e) {
+    console.warn('[print] companion HTTP receipt failed:', e);
+    return false;
+  }
+}
+
+async function _companionPrintBarcode(
+  product: Parameters<typeof printBarcode>[0],
+  settings: PrintSettings
+): Promise<boolean> {
+  try {
+    const res = await fetch('http://localhost:8765/print/barcode', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: product.name,
+        barcode: product.barcode,
+        sku: product.sku,
+        selling_price: product.selling_price,
+        show_sku: settings.barcode_show_sku,
+        show_price: settings.barcode_show_price,
+        shop_name: settings.shop_name,
+        details: product.details ?? {},
+      }),
+      signal: AbortSignal.timeout(5000),
+    });
+    return res.ok;
+  } catch (e) {
+    console.warn('[print] companion HTTP barcode failed:', e);
+    return false;
+  }
+}
+
+function _receiptPayload(bill: BillPrintData, settings: PrintSettings) {
+  return {
+    shop_name: settings.shop_name || bill.shop_name,
+    shop_address: settings.shop_address,
+    shop_phone: settings.shop_phone,
+    gst_number: settings.gst_number,
+    date: bill.date.toISOString(),
+    bill_number: bill.bill_number,
+    items: bill.items.map((i) => ({ name: i.name, qty: i.qty, unit_price: i.unit_price })),
+    subtotal: bill.subtotal,
+    tax_total: bill.tax_total,
+    discount: bill.discount,
+    grand_total: bill.grand_total,
+    show_tax_breakdown: settings.show_tax_breakdown,
+    show_customer_info: settings.show_customer_info,
+    payment_method: bill.payment_method,
+    customer_name: bill.customer_name ?? '',
+    customer_phone: bill.customer_phone ?? '',
+    receipt_footer: settings.receipt_footer,
+  };
+}
+
 export async function printReceipt(bill: BillPrintData, settings: PrintSettings): Promise<void> {
+  // Step 1: Tauri IPC (running inside the companion app WebView)
+  const tauri = tauriCore();
+  if (tauri) {
+    try {
+      await tauri.invoke('print_receipt_cmd', { data: _receiptPayload(bill, settings) });
+      return;
+    } catch (e) {
+      console.warn('[print] Tauri receipt failed:', e);
+    }
+  }
+
+  // Step 2: Companion app HTTP server (browser users with companion running)
+  if (await companionAvailable()) {
+    if (await _companionPrintReceipt(bill, settings)) return;
+  }
+
+  // Step 3: QZ Tray raw ESC/POS
   if (settings.receipt_printer) {
     const escpos = buildReceiptEscPos(bill, settings);
     const ok = await printRawViaQZ(escpos, settings.receipt_printer);
     if (ok) return;
   }
+
+  // Step 4: Browser print dialog
   openPrintWindow(buildReceiptHtml(bill, settings));
 }
 
@@ -507,9 +610,39 @@ export async function printBarcode(
 
   const html = buildBarcodeHtml(product, settings, imgSrc);
 
+  // Step 1: Tauri IPC
+  const tauri = tauriCore();
+  if (tauri) {
+    try {
+      await tauri.invoke('print_barcode_cmd', {
+        data: {
+          name: product.name,
+          barcode: product.barcode,
+          sku: product.sku,
+          selling_price: product.selling_price,
+          show_sku: settings.barcode_show_sku,
+          show_price: settings.barcode_show_price,
+          shop_name: settings.shop_name,
+          details: product.details ?? {},
+        },
+      });
+      return;
+    } catch (e) {
+      console.warn('[print] Tauri barcode failed:', e);
+    }
+  }
+
+  // Step 2: Companion app HTTP server
+  if (await companionAvailable()) {
+    if (await _companionPrintBarcode(product, settings)) return;
+  }
+
+  // Step 3: QZ Tray HTML print
   if (settings.label_printer) {
     const ok = await printHtmlViaQZ(html, settings.label_printer);
     if (ok) return;
   }
+
+  // Step 4: Browser print dialog
   openPrintWindow(html);
 }

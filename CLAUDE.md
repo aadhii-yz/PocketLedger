@@ -92,7 +92,7 @@ SvelteKit app in **static adapter mode** (prerendered, `fallback: index.html` fo
 **Key files:**
 - `src/lib/schemas.ts` — **Single source of truth for all types.** Zod schemas for every PocketBase collection (snake_case, matching `backend/pb_schema.json`) plus exported `z.infer<>` TypeScript types and form input schemas with validation messages. Do not define PocketBase record types elsewhere — import from here. Also exports `firstError(ZodError)` utility.
 - `src/lib/pb.ts` — PocketBase client singleton, `customFetch` helper for `/api/custom/*` calls (injects auth token), `mapRole` (PocketBase role → frontend role), and the exported `PB_URL` constant. `AuthUser` type re-exported from `schemas.ts`. Always import `PB_URL` from here — never re-derive it from the `pb` instance.
-- `src/lib/print.ts` — Print utility: `loadPrintSettings()` (fetches singleton from `print_settings` collection), `printReceipt(bill, settings)` (80mm thermal receipt), `printBarcode(product, settings)` (single barcode label), `listQZPrinters()` (returns all printers visible to QZ Tray). Both print functions are async and try QZ Tray first (if a printer name is configured in settings), then fall back to `window.open` + browser print dialog. QZ Tray is lazy-loaded via dynamic `import('qz-tray')` and uses unsigned security mode (QZ Tray must have "Allow unsigned content" enabled). The connection is cached for the session. Barcode PNG is fetched from `/api/custom/barcode/{id}` and converted to a base64 data URL (works in both QZ Tray's renderer and the fallback window). `PrintSettings` type re-exported from `schemas.ts`.
+- `src/lib/print.ts` — Print utility: `loadPrintSettings()` (fetches singleton from `print_settings` collection), `printReceipt(bill, settings)` (80mm thermal receipt), `printBarcode(product, settings)` (single barcode label), `listQZPrinters()` (returns all printers visible to QZ Tray). Both print functions follow a **four-step fallback chain**: (1) Tauri IPC (`window.__TAURI__.core.invoke`) — present only inside the companion app WebView; (2) companion app HTTP at `localhost:8765` — 800 ms availability check, then POST (for browser users running companion app alongside Chrome); (3) QZ Tray raw/HTML print (if a printer name is set in `print_settings`); (4) `window.open` + browser print dialog. QZ Tray is lazy-loaded via dynamic `import('qz-tray')` and uses unsigned security mode. Barcode PNG is fetched from `/api/custom/barcode/{id}` and converted to a base64 data URL. `PrintSettings` type re-exported from `schemas.ts`.
 - `src/routes/+page.svelte` — login page; on success calls `mapRole` and `goto`s to the role dashboard.
 - Routes are organized by role: `/admin` (logs, users), `/manager` (reports, sales, stock, users, print-settings), `/billing` (history), `/stock` (inventory, products, shops, transfers, warehouse), `/stats` (overview, [shopId]).
 - `src/lib/components/` — shared UI primitives (Button, Card, DataTable, etc.).
@@ -130,6 +130,44 @@ Form schemas using `z.coerce.number()` handle `<input type="number">` string val
 - The billing page (`/billing`) disables checkout when offline; `OfflineIndicator.svelte` shows a fixed-bottom banner on all routes via the root layout.
 
 **Camera barcode scanning (`BarcodeScanner.svelte`):** Renders a camera button only on touch devices (`navigator.maxTouchPoints > 0`). On tap, opens a full-screen camera modal. Uses the native `BarcodeDetector` API on Android (zero extra JS); falls back to dynamically imported `@zxing/browser` on iOS (lazy-loaded only on first use). Integrated in billing, stock inventory, and stock transfers pages. `@zxing/browser` requires `@zxing/library` as a peer dep — both must be installed explicitly (`npm install @zxing/browser @zxing/library`), since npm does not auto-install peer deps. Camera access requires HTTPS or `localhost`; plain HTTP on a local IP will be blocked by Android Chrome.
+
+### Companion App (`companion_app/`)
+
+Tauri v2 app (Svelte + Rust) that serves two purposes: (1) embeds the SvelteKit PWA in a WebView so users have a single native app, and (2) runs a local HTTP server on `localhost:8765` for browser-based users. Required because the backend is cloud-hosted (can't reach LAN printers) and browsers can't open raw TCP sockets.
+
+**Why it exists:** Cloud backend → can't reach LAN printers. Browser PWA → can't open raw TCP. Companion app runs locally on the same device/network as the printers.
+
+**App structure:**
+- `src/routes/+page.svelte` — Settings UI: PocketLedger URL, barcode printer IP/port, receipt printer IP/port. Calls `get_settings` / `save_settings` Tauri commands. On Android, calls `plugin:print|startService` on mount to start the foreground service.
+- `src-tauri/src/settings.rs` — load/save JSON settings to Tauri's app data directory.
+- `src-tauri/src/tspl.rs` — TSPL commands for **TVS LP 46 dlite** (barcode labels, 50 mm × 30 mm, 203 DPI). Sends over TCP to the printer's WiFi IP:port.
+- `src-tauri/src/escpos.rs` — ESC/POS bytes for **TVS RP 3230** (80 mm thermal receipt). Same TCP approach.
+- `src-tauri/src/print_server.rs` — `axum` HTTP server on `127.0.0.1:8765`, started in background via `tauri::async_runtime::spawn` at app launch.
+- `src-tauri/src/lib.rs` — Tauri commands: `get_settings`, `save_settings`, `print_barcode_cmd`, `print_receipt_cmd`.
+
+**Rust crates:** `tauri@2`, `axum@0.7`, `tokio` (full), `tower-http` (CORS), `serde`, `serde_json`.
+
+**Tauri commands (IPC, called from WebView via `window.__TAURI__.core.invoke`):**
+| Command | Purpose |
+|---|---|
+| `get_settings` | Returns saved settings JSON |
+| `save_settings` | Persists settings to disk, updates in-memory state |
+| `print_barcode_cmd` | TSPL print via TCP (step 1 of barcode fallback chain) |
+| `print_receipt_cmd` | ESC/POS print via TCP (step 1 of receipt fallback chain) |
+
+**HTTP API (all on `localhost:8765`) — used when accessing PocketLedger from a browser instead of the WebView:**
+- `GET /status` → `{"ok": true}` — 800 ms availability check used by `print.ts`
+- `POST /print/barcode` — body: product fields + `show_sku`, `show_price`, `shop_name`, `details`
+- `POST /print/receipt` — body: all `BillPrintData` fields merged with `PrintSettings` fields
+
+**Android foreground service (`src-tauri/android/`):**
+- `PrintService.kt` — standard Android `Service`, `START_STICKY`, low-importance notification channel `pocketledger_print`. Keeps the process alive so Android doesn't kill the Rust HTTP server when the user switches to Chrome.
+- `PrintPlugin.kt` — `@TauriPlugin` with `startService` / `stopService` commands wired to `PrintService`.
+- `AndroidManifest.xml` — declares `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_DATA_SYNC` (Android 14+), and `POST_NOTIFICATIONS` permissions; registers `PrintService` with `foregroundServiceType="dataSync"`.
+
+**Building:** Triggered manually via GitHub Actions (`.github/workflows/build-companion.yml`). Android job uses `cargo tauri android build --apk` on ubuntu runner (needs Android SDK + NDK + Rust `aarch64-linux-android` target). Windows job uses `cargo tauri build` on windows runner. Artifacts retained 30 days.
+
+**First-time device setup:** Open companion app → enter PocketLedger URL + printer IPs → Save. Settings are persisted to Tauri's app data dir. The Rust HTTP server starts automatically; on Android the foreground service starts on app open. For WebView use, `window.__TAURI__` is available and printing goes direct via Tauri IPC. For browser use, `print.ts` pings `localhost:8765/status` first.
 
 ### Data model summary
 
