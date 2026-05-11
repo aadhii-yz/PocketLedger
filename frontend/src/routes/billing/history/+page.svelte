@@ -1,5 +1,6 @@
 <script lang="ts">
   import ImprovedSidebar from "$lib/components/ImprovedSidebar.svelte";
+  import { isCompanionMode, companionMenuItem } from "$lib/companion";
   import FluidLayout from "$lib/components/FluidLayout.svelte";
   import Card from "$lib/components/Card.svelte";
   import {
@@ -20,10 +21,11 @@
   import { onMount } from "svelte";
   import { slide } from "svelte/transition";
 
-  const menuItems = [
+  const baseMenuItems = [
     { label: "Billing", icon: Receipt, path: "/billing" },
     { label: "Bill History", icon: History, path: "/billing/history" },
   ];
+  const menuItems = isCompanionMode() ? [...baseMenuItems, companionMenuItem] : baseMenuItems;
 
   interface ShopOption {
     id: string;

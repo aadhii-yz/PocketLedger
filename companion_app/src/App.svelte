@@ -132,6 +132,26 @@
       </button>
     </div>
   </form>
+
+  {#if settings.pocketledger_url}
+    <section class="launch">
+      <h2>Launch</h2>
+      <div class="launch-buttons">
+        <button
+          class="launch-btn"
+          onclick={() => { window.location.href = settings.pocketledger_url + '/billing?companion=1'; }}
+        >
+          Open Billing
+        </button>
+        <button
+          class="launch-btn"
+          onclick={() => { window.location.href = settings.pocketledger_url + '/stock/inventory?companion=1'; }}
+        >
+          Open Stock Entry
+        </button>
+      </div>
+    </section>
+  {/if}
 </div>
 
 <style>
@@ -207,5 +227,31 @@
     border-radius: 6px;
     padding: 8px 12px;
     margin-bottom: 12px;
+  }
+
+  .launch {
+    margin-top: 12px;
+  }
+
+  .launch-buttons {
+    display: flex;
+    gap: 8px;
+  }
+
+  .launch-btn {
+    flex: 1;
+    padding: 10px 16px;
+    font-size: 14px;
+    font-weight: 600;
+    color: #1e40af;
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+
+  .launch-btn:hover {
+    background: #dbeafe;
   }
 </style>

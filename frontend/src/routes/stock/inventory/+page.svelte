@@ -25,14 +25,16 @@
   import { slide } from "svelte/transition";
 
   import { ArrowLeftRight, Store, Warehouse, Receipt } from "lucide-svelte";
+  import { isCompanionMode, companionMenuItem } from "$lib/companion";
 
-  const menuItems = [
+  const baseMenuItems = [
     { label: "Product Management", icon: ShoppingBag, path: "/stock/products" },
     { label: "Stock Management", icon: Package, path: "/stock/inventory" },
     { label: "Warehouse", icon: Warehouse, path: "/stock/warehouse" },
     { label: "Shop Stock", icon: Store, path: "/stock/shops" },
     { label: "Transfers", icon: ArrowLeftRight, path: "/stock/transfers" },
   ];
+  const menuItems = isCompanionMode() ? [...baseMenuItems, companionMenuItem] : baseMenuItems;
 
   interface StockProduct {
     id: string;

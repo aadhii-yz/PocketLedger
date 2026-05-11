@@ -12,6 +12,7 @@
     label: string;
     icon: ComponentType<Icon>;
     path: string;
+    onclick?: () => void;
   }
 
   interface Props {
@@ -91,9 +92,9 @@
     <!-- Navigation -->
     <nav class="flex-1 px-3 space-y-1 overflow-y-auto">
       {#each menuItems as item}
-        {@const isActive = $page.url.pathname === item.path}
+        {@const isActive = !item.onclick && $page.url.pathname === item.path}
         <button
-          onclick={() => goto(item.path)}
+          onclick={() => item.onclick ? item.onclick() : goto(item.path)}
           class="w-full flex items-center gap-3 px-3 py-3 rounded-lg transition-all hover:translate-x-0.5 {isActive
             ? 'bg-sidebar-accent text-sidebar-accent-foreground shadow-sm'
             : 'hover:bg-sidebar-accent/50 text-sidebar-foreground'} {isCollapsed
