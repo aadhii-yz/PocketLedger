@@ -94,3 +94,42 @@ jobs:
             companion_app/src-tauri/target/release/bundle/nsis/*.exe
             companion_app/src-tauri/target/release/bundle/msi/*.msi
           retention-days: 30
+
+  release:
+    name: Publish Release
+    needs: [build-android, build-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read version from tauri.conf.json
+        id: version
+        run: |
+          VERSION=$(jq -r '.version' companion_app/src-tauri/tauri.conf.json)
+          echo "version=v$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Download Android artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pocketledger-print-android
+          path: release-assets/android
+
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pocketledger-print-windows
+          path: release-assets/windows
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          name: Companion App ${{ steps.version.outputs.version }}
+          draft: false
+          prerelease: false
+          files: |
+            release-assets/android/*.apk
+            release-assets/windows/*.exe
+            release-assets/windows/*.msi
