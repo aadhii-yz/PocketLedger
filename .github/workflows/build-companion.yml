@@ -2,6 +2,10 @@ name: Build Companion App
 
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g. v1.2.0)'
+        required: true
 
 jobs:
   # ── Android APK ─────────────────────────────────────────────────────────────
@@ -26,13 +30,11 @@ jobs:
       - name: Generate platform boilerplate
         working-directory: companion_app
         run: |
-          # --no-pub: skip pub get now (our pubspec.yaml comes back via git restore below)
           flutter create . \
             --project-name pocketledger_print \
             --org com.pocketledger \
             --platforms android \
             --no-pub
-          # flutter create overwrites lib/main.dart and pubspec.yaml — restore ours
           git checkout -- lib/ pubspec.yaml
 
       - name: Patch AndroidManifest.xml
@@ -49,7 +51,6 @@ jobs:
         with:
           name: pocketledger-print-android
           path: companion_app/build/app/outputs/flutter-apk/app-release.apk
-          retention-days: 30
 
   # ── Windows exe ─────────────────────────────────────────────────────────────
   build-windows:
@@ -79,8 +80,48 @@ jobs:
           flutter pub get
           flutter build windows --release
 
+      - name: Zip Windows build
+        shell: pwsh
+        run: |
+          Compress-Archive `
+            -Path "companion_app/build/windows/x64/runner/Release/*" `
+            -DestinationPath "pocketledger-print-windows.zip"
+
       - uses: actions/upload-artifact@v4
         with:
           name: pocketledger-print-windows
-          path: companion_app/build/windows/x64/runner/Release/
-          retention-days: 30
+          path: pocketledger-print-windows.zip
+
+  # ── GitHub Release ───────────────────────────────────────────────────────────
+  release:
+    needs: [build-android, build-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: pocketledger-print-android
+          path: dist/
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: pocketledger-print-windows
+          path: dist/
+
+      - name: Rename Android APK
+        run: mv dist/app-release.apk dist/pocketledger-print-${{ github.event.inputs.version }}-android.apk
+
+      - name: Rename Windows zip
+        run: mv dist/pocketledger-print-windows.zip dist/pocketledger-print-${{ github.event.inputs.version }}-windows.zip
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.version }}
+          name: PocketLedger Companion ${{ github.event.inputs.version }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: |
+            dist/pocketledger-print-${{ github.event.inputs.version }}-android.apk
+            dist/pocketledger-print-${{ github.event.inputs.version }}-windows.zip
