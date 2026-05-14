@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "identifier": "com.pocketledger.companion",
   "build": {
-    "frontendDist": "../build",
+    "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
     "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build"
