@@ -143,12 +143,13 @@ Tauri v2 app (plain Vite+Svelte + Rust) that serves two purposes: (1) navigates 
 **WebView navigation pattern:** The companion settings page is served from `tauri://localhost`. After saving settings, "Open Billing" and "Open Stock Entry" buttons navigate `window.location.href` to `{pocketledger_url}/billing?companion=1` and `{pocketledger_url}/stock/inventory?companion=1`. The `?companion=1` param triggers companion mode in the SvelteKit app (see Companion mode detection above), which adds a "Printer Settings" sidebar item. Clicking "Printer Settings" navigates the WebView back to `tauri://localhost`. Tauri IPC (`window.__TAURI__`) is NOT available on the remote URL (no `dangerousRemoteDomainIpcAccess`), so printing uses step 2 of the fallback chain (localhost:8765 HTTP server).
 
 **App structure:**
-- `src/App.svelte` — Settings UI: PocketLedger URL, barcode printer IP/port, receipt printer IP/port, plus "Open Billing" / "Open Stock Entry" navigation buttons (shown only when URL is set). Calls `get_settings` / `save_settings` Tauri commands. On Android, calls `plugin:print|startService` on mount to start the foreground service.
+- `src/App.svelte` — Settings UI: PocketLedger URL, barcode printer IP/port, receipt printer IP/port, plus "Open Billing" / "Open Stock Entry" navigation buttons (shown only when URL is set). Calls `get_settings` / `save_settings` Tauri commands. On Android, calls `start_print_service` on mount to start the foreground service.
 - `src-tauri/src/settings.rs` — load/save JSON settings to Tauri's app data directory.
 - `src-tauri/src/tspl.rs` — TSPL commands for **TVS LP 46 dlite** (barcode labels, 50 mm × 30 mm, 203 DPI). Sends over TCP to the printer's WiFi IP:port.
 - `src-tauri/src/escpos.rs` — ESC/POS bytes for **TVS RP 3230** (80 mm thermal receipt). Same TCP approach.
 - `src-tauri/src/print_server.rs` — `axum` HTTP server on `127.0.0.1:8765`, started in background via `tauri::async_runtime::spawn` at app launch.
-- `src-tauri/src/lib.rs` — Tauri commands: `get_settings`, `save_settings`, `print_barcode_cmd`, `print_receipt_cmd`.
+- `src-tauri/capabilities/default.json` — Tauri v2 ACL capability granting `core:default` to the `main` window. App-defined commands are not ACL-gated (so the print/settings commands work regardless), but this file is required for any future `@tauri-apps/api` core usage (events, window, etc.) and is the conventional baseline.
+- `src-tauri/src/lib.rs` — Tauri commands: `get_settings`, `save_settings`, `print_barcode_cmd`, `print_receipt_cmd`, `start_print_service`, `stop_print_service`. Also defines the internal `init_print()` plugin, which registers the Kotlin `PrintPlugin` on Android via `register_android_plugin` and stashes its `PluginHandle` in managed state. The `start_print_service` / `stop_print_service` app commands drive the Android foreground service through that handle (no-op on desktop). They are deliberately app-local commands, not a JS `plugin:print|...` invocation, so they are not ACL-gated and need no plugin permission manifest.
 
 **Rust crates:** `tauri@2`, `axum@0.7`, `tokio` (full), `tower-http` (CORS), `serde`, `serde_json`.
 
@@ -159,6 +160,8 @@ Tauri v2 app (plain Vite+Svelte + Rust) that serves two purposes: (1) navigates 
 | `save_settings` | Persists settings to disk, updates in-memory state |
 | `print_barcode_cmd` | TSPL print via TCP (step 1 of barcode fallback chain) |
 | `print_receipt_cmd` | ESC/POS print via TCP (step 1 of receipt fallback chain) |
+| `start_print_service` | Starts the Android foreground service (no-op on desktop) |
+| `stop_print_service` | Stops the Android foreground service (no-op on desktop) |
 
 **HTTP API (all on `localhost:8765`) — used when accessing PocketLedger from a browser instead of the WebView:**
 - `GET /status` → `{"ok": true}` — 800 ms availability check used by `print.ts`
@@ -167,7 +170,7 @@ Tauri v2 app (plain Vite+Svelte + Rust) that serves two purposes: (1) navigates 
 
 **Android foreground service (`src-tauri/android/`):**
 - `PrintService.kt` — standard Android `Service`, `START_STICKY`, low-importance notification channel `pocketledger_print`. Keeps the process alive so Android doesn't kill the Rust HTTP server when the user switches to Chrome.
-- `PrintPlugin.kt` — `@TauriPlugin` with `startService` / `stopService` commands wired to `PrintService`.
+- `PrintPlugin.kt` — `@TauriPlugin` with `startService` / `stopService` commands wired to `PrintService`. Registered from Rust by `init_print()` in `lib.rs` via `register_android_plugin("com.pocketledger.companion", "PrintPlugin")`; invoked through `PluginHandle::run_mobile_plugin` by the `start_print_service` / `stop_print_service` app commands (not directly from JS).
 - `AndroidManifest.xml` — declares `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_DATA_SYNC` (Android 14+), and `POST_NOTIFICATIONS` permissions; registers `PrintService` with `foregroundServiceType="dataSync"`.
 
 **Building:** Triggered manually via GitHub Actions (`.github/workflows/build-companion.yml`). Android job uses `cargo tauri android build --apk` on ubuntu runner (needs Android SDK + NDK + Rust `aarch64-linux-android` target). Windows job uses `cargo tauri build` on windows runner. A `release` job runs after both builds, reads the version from `src-tauri/tauri.conf.json`, and publishes a GitHub Release tagged `v{version}` with the `.apk`, `.exe`, and `.msi` attached. To ship a new version, bump `"version"` in `tauri.conf.json` and trigger the workflow.

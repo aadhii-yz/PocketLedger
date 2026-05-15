@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Default capability for the PocketLedger Companion window. App-defined commands (get_settings, save_settings, print_barcode_cmd, print_receipt_cmd, start_print_service, stop_print_service) are not ACL-gated; this grants the core defaults plus future-proofing.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

@@ -33,7 +33,9 @@
       console.error('Failed to load settings:', e);
     }
     if (isAndroid) {
-      invoke('plugin:print|startService').catch(() => {});
+      invoke('start_print_service').catch((e) =>
+        console.error('Failed to start print service:', e)
+      );
     }
   });
 
