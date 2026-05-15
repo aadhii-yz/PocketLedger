@@ -16,7 +16,9 @@
     Users,
   } from "lucide-svelte";
   import { fly } from "svelte/transition";
-  import { Store, Printer } from "lucide-svelte";
+  import { Store, Printer, AlertCircle } from "lucide-svelte";
+  import { pb } from "$lib/pb";
+  import { startOfMonth, endOfMonth, subDays, format } from "date-fns";
 
   const menuItems = [
     { label: "Dashboard", icon: LayoutDashboard, path: "/manager" },
@@ -53,52 +55,207 @@
   let selectedYear = $state(currentYear);
   let monthlyDownloading = $state(false);
   let monthlyDownloaded = $state(false);
+  let errorMsg = $state("");
 
-  let downloadProgress = $state<Record<string, number>>({});
-  let monthlyProgress = $state(0);
-
-  function simulateDownload(reportId: string) {
-    downloading = reportId;
-    downloadProgress[reportId] = 0;
-
-    const interval = setInterval(() => {
-      downloadProgress[reportId] += 5;
-      if (downloadProgress[reportId] >= 100) clearInterval(interval);
-    }, 100);
-
-    setTimeout(() => {
-      clearInterval(interval);
-      downloading = null;
-      const newSet = new Set(downloaded);
-      newSet.add(reportId);
-      downloaded = newSet;
-
-      setTimeout(() => {
-        const resetSet = new Set(downloaded);
-        resetSet.delete(reportId);
-        downloaded = resetSet;
-      }, 3000);
-    }, 2000);
+  // ── CSV helpers (RFC-4180 quoting, BOM for Excel) ──────────────────────────
+  function csvCell(v: unknown): string {
+    const s = v === null || v === undefined ? "" : String(v);
+    return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   }
 
-  function simulateMonthlyDownload() {
+  function toCSV(headers: string[], rows: unknown[][]): string {
+    const lines = [headers.map(csvCell).join(",")];
+    for (const r of rows) lines.push(r.map(csvCell).join(","));
+    return lines.join("\r\n");
+  }
+
+  function downloadCSV(filename: string, csv: string) {
+    const blob = new Blob(["﻿" + csv], {
+      type: "text/csv;charset=utf-8;",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  const pbDate = (d: Date) => format(d, "yyyy-MM-dd HH:mm:ss");
+
+  async function fetchBills(from: Date, to?: Date) {
+    let filter = `created >= "${pbDate(from)}"`;
+    if (to) filter += ` && created <= "${pbDate(to)}"`;
+    return pb.collection("bills").getFullList({
+      filter,
+      sort: "-created",
+      expand: "shop",
+    });
+  }
+
+  function billRows(bills: any[]): unknown[][] {
+    return bills.map((b) => [
+      b.bill_number,
+      b.created ? format(new Date(b.created), "yyyy-MM-dd HH:mm") : "",
+      b.expand?.shop?.name || b.shop || "",
+      b.customer_name || "",
+      b.payment_method || "",
+      b.payment_status || "",
+      b.subtotal ?? 0,
+      b.tax_total ?? 0,
+      b.discount ?? 0,
+      b.grand_total ?? 0,
+    ]);
+  }
+  const BILL_HEADERS = [
+    "Bill Number",
+    "Date",
+    "Shop",
+    "Customer",
+    "Payment Method",
+    "Payment Status",
+    "Subtotal",
+    "Tax",
+    "Discount",
+    "Grand Total",
+  ];
+
+  function financialSummary(bills: any[]): unknown[][] {
+    const sum = (k: string) =>
+      bills.reduce((s, b) => s + (Number(b[k]) || 0), 0);
+    const byMethod = new Map<string, { count: number; total: number }>();
+    for (const b of bills) {
+      const m = b.payment_method || "unknown";
+      const e = byMethod.get(m) || { count: 0, total: 0 };
+      e.count += 1;
+      e.total += Number(b.grand_total) || 0;
+      byMethod.set(m, e);
+    }
+    const rows: unknown[][] = [
+      ["Metric", "Value"],
+      ["Total Bills", bills.length],
+      ["Total Revenue", sum("grand_total").toFixed(2)],
+      ["Total Tax Collected", sum("tax_total").toFixed(2)],
+      ["Total Discounts", sum("discount").toFixed(2)],
+      ["Net Subtotal", sum("subtotal").toFixed(2)],
+      [],
+      ["Payment Method", "Bills", "Revenue"],
+    ];
+    for (const [m, e] of byMethod)
+      rows.push([m, e.count, e.total.toFixed(2)]);
+    return rows;
+  }
+
+  async function buildReport(id: string): Promise<{ name: string; csv: string }> {
+    if (id === "sales") {
+      const bills = await fetchBills(subDays(new Date(), 30));
+      return {
+        name: `sales-report-last-30-days-${format(new Date(), "yyyy-MM-dd")}.csv`,
+        csv: toCSV(BILL_HEADERS, billRows(bills)),
+      };
+    }
+    if (id === "stock") {
+      const stock = await pb
+        .collection("stock")
+        .getFullList({ expand: "product,location", sort: "location" });
+      const rows = stock.map((s: any) => {
+        const p = s.expand?.product;
+        const qty = Number(s.quantity) || 0;
+        const price = Number(p?.selling_price) || 0;
+        const threshold = Number(s.low_stock_threshold) || 0;
+        return [
+          p?.name || s.product,
+          p?.sku || "",
+          p?.barcode || "",
+          s.expand?.location?.name || s.location,
+          qty,
+          threshold,
+          price,
+          (qty * price).toFixed(2),
+          threshold > 0 && qty <= threshold ? "LOW" : "",
+        ];
+      });
+      return {
+        name: `stock-report-${format(new Date(), "yyyy-MM-dd")}.csv`,
+        csv: toCSV(
+          [
+            "Product",
+            "SKU",
+            "Barcode",
+            "Location",
+            "Quantity",
+            "Low Stock Threshold",
+            "Selling Price",
+            "Stock Value",
+            "Status",
+          ],
+          rows,
+        ),
+      };
+    }
+    // financial
+    const bills = await fetchBills(subDays(new Date(), 30));
+    return {
+      name: `financial-report-last-30-days-${format(new Date(), "yyyy-MM-dd")}.csv`,
+      csv: toCSV(financialSummary(bills)[0] as string[], financialSummary(bills).slice(1)),
+    };
+  }
+
+  async function runReport(id: string) {
+    if (downloading) return;
+    downloading = id;
+    errorMsg = "";
+    try {
+      const { name, csv } = await buildReport(id);
+      downloadCSV(name, csv);
+      const s = new Set(downloaded);
+      s.add(id);
+      downloaded = s;
+      setTimeout(() => {
+        const r = new Set(downloaded);
+        r.delete(id);
+        downloaded = r;
+      }, 3000);
+    } catch (e: any) {
+      errorMsg = e?.message || "Failed to generate report";
+    } finally {
+      downloading = null;
+    }
+  }
+
+  async function runMonthlyDownload() {
+    if (monthlyDownloading) return;
     monthlyDownloading = true;
     monthlyDownloaded = false;
-    monthlyProgress = 0;
-
-    const interval = setInterval(() => {
-      monthlyProgress += 5;
-      if (monthlyProgress >= 100) clearInterval(interval);
-    }, 100);
-
-    setTimeout(() => {
-      clearInterval(interval);
-      monthlyDownloading = false;
+    errorMsg = "";
+    try {
+      const monthIdx = MONTHS.indexOf(selectedMonth);
+      const from = startOfMonth(new Date(selectedYear, monthIdx, 1));
+      const to = endOfMonth(from);
+      const bills = await fetchBills(from, to);
+      const csv = [
+        `${selectedMonth} ${selectedYear} — Sales`,
+        toCSV(BILL_HEADERS, billRows(bills)),
+        "",
+        `${selectedMonth} ${selectedYear} — Financial Summary`,
+        toCSV(
+          financialSummary(bills)[0] as string[],
+          financialSummary(bills).slice(1),
+        ),
+      ].join("\r\n");
+      downloadCSV(
+        `report-${selectedYear}-${String(monthIdx + 1).padStart(2, "0")}-${selectedMonth}.csv`,
+        csv,
+      );
       monthlyDownloaded = true;
-      setTimeout(() => {
-        monthlyDownloaded = false;
-      }, 3000);
-    }, 2000);
+      setTimeout(() => (monthlyDownloaded = false), 3000);
+    } catch (e: any) {
+      errorMsg = e?.message || "Failed to generate monthly report";
+    } finally {
+      monthlyDownloading = false;
+    }
   }
 
   const reports = [
@@ -161,6 +318,15 @@
       subtitle="Download business reports and analytics"
       icon={FileText}
     />
+
+    {#if errorMsg}
+      <div
+        class="mb-6 flex items-center gap-2 p-3 bg-destructive/10 border border-destructive/30 rounded-lg text-destructive text-sm"
+      >
+        <AlertCircle class="w-4 h-4 shrink-0" />
+        {errorMsg}
+      </div>
+    {/if}
 
     <!-- MONTHLY REPORT SECTION -->
     <div in:fly={{ y: 16, duration: 350 }}>
@@ -233,37 +399,18 @@
         </div>
 
         <Button
-          onclick={simulateMonthlyDownload}
+          onclick={runMonthlyDownload}
           disabled={monthlyDownloading}
           icon={monthlyDownloaded ? CheckCircle : Download}
           variant={monthlyDownloaded ? "secondary" : "primary"}
           class="w-full sm:w-auto"
         >
           {monthlyDownloading
-            ? `Generating ${selectedMonth} ${selectedYear} PDF...`
+            ? `Generating ${selectedMonth} ${selectedYear} CSV…`
             : monthlyDownloaded
               ? `Downloaded — ${selectedMonth} ${selectedYear}`
-              : `Download ${selectedMonth} ${selectedYear} Report (PDF)`}
+              : `Download ${selectedMonth} ${selectedYear} Report (CSV)`}
         </Button>
-
-        {#if monthlyDownloading}
-          <div class="mt-4">
-            <div
-              class="flex items-center justify-between text-xs text-muted-foreground mb-1"
-            >
-              <span
-                >Generating report for {selectedMonth} {selectedYear}...</span
-              >
-              <span>Please wait</span>
-            </div>
-            <div class="w-full h-2 bg-muted rounded-full overflow-hidden">
-              <div
-                class="h-full bg-purple-500 transition-all duration-100 ease-linear"
-                style="width: {monthlyProgress}%"
-              ></div>
-            </div>
-          </div>
-        {/if}
       </Card>
     </div>
 
@@ -276,8 +423,8 @@
             General Reports (Last 30 Days)
           </h3>
           <p class="text-sm text-blue-700">
-            Download general reports covering the last 30 days of data in PDF
-            format, including detailed analytics, charts, and data tables.
+            Download general reports covering the last 30 days of data as CSV
+            files, ready to open in Excel or Google Sheets.
           </p>
         </div>
       </div>
@@ -289,7 +436,6 @@
         {@const Icon = report.icon}
         {@const isDownloading = downloading === report.id}
         {@const isDownloaded = downloaded.has(report.id)}
-        {@const progress = downloadProgress[report.id] || 0}
 
         <div in:fly={{ y: 20, duration: 300, delay: idx * 100 }}>
           <Card class="h-full">
@@ -324,35 +470,18 @@
             </div>
 
             <Button
-              onclick={() => simulateDownload(report.id)}
+              onclick={() => runReport(report.id)}
               disabled={isDownloading}
               icon={isDownloaded ? CheckCircle : Download}
               variant={isDownloaded ? "secondary" : "primary"}
               class="w-full"
             >
               {isDownloading
-                ? "Generating PDF..."
+                ? "Generating CSV…"
                 : isDownloaded
                   ? "Downloaded Successfully"
                   : "Download Report (Last 30 Days)"}
             </Button>
-
-            {#if isDownloading}
-              <div class="mt-4">
-                <div
-                  class="flex items-center justify-between text-xs text-muted-foreground mb-1"
-                >
-                  <span>Generating report...</span>
-                  <span>Please wait</span>
-                </div>
-                <div class="w-full h-2 bg-muted rounded-full overflow-hidden">
-                  <div
-                    class="h-full bg-primary transition-all duration-100 ease-linear"
-                    style="width: {progress}%"
-                  ></div>
-                </div>
-              </div>
-            {/if}
           </Card>
         </div>
       {/each}
@@ -368,10 +497,10 @@
             Format & Layout
           </h4>
           <ul class="space-y-1 text-sm text-muted-foreground">
-            <li>• Professional PDF format</li>
-            <li>• Branded header and footer</li>
-            <li>• Color charts and graphs</li>
-            <li>• Printable A4 layout</li>
+            <li>• Spreadsheet-ready CSV format</li>
+            <li>• Opens in Excel / Google Sheets</li>
+            <li>• One row per record</li>
+            <li>• UTF-8 with Excel BOM</li>
           </ul>
         </div>
         <div>

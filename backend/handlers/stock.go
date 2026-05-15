@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"fmt"
+	"math"
 	"net/http"
 
 	"github.com/aadhii-yz/PocketLedger/backend/services"
@@ -33,6 +34,14 @@ func AdjustStock(app core.App) func(*core.RequestEvent) error {
 		validTypes := map[string]bool{"purchase": true, "adjustment": true, "return": true}
 		if !validTypes[req.Type] {
 			return e.JSON(http.StatusBadRequest, map[string]string{"message": "type must be one of: purchase, adjustment, return"})
+		}
+		if math.IsNaN(req.Quantity) || math.IsInf(req.Quantity, 0) || req.Quantity == 0 {
+			return e.JSON(http.StatusBadRequest, map[string]string{"message": "quantity must be a non-zero number"})
+		}
+		// purchase/return only ever add stock — a non-positive delta is meaningless.
+		// Negative deltas are valid only for explicit corrections (adjustment).
+		if (req.Type == "purchase" || req.Type == "return") && req.Quantity < 0 {
+			return e.JSON(http.StatusBadRequest, map[string]string{"message": req.Type + " quantity must be positive"})
 		}
 
 		err := app.RunInTransaction(func(txApp core.App) error {

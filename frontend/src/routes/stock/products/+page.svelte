@@ -214,8 +214,8 @@
     const result = await pb
       .collection("products")
       .getList(1, 1, { filter: 'barcode != ""', sort: "-barcode" });
-    const last = result.items[0]?.barcode;
-    const next = last ? parseInt(last, 10) + 1 : 1;
+    const last = parseInt(result.items[0]?.barcode, 10);
+    const next = Number.isFinite(last) ? last + 1 : 1;
     formData.barcode = String(next).padStart(10, "0");
   }
 
@@ -296,8 +296,8 @@
         const result = await pb
           .collection("products")
           .getList(1, 1, { filter: 'barcode != ""', sort: "-barcode" });
-        const last = result.items[0]?.barcode;
-        const next = last ? parseInt(last, 10) + 1 : 1;
+        const last = parseInt(result.items[0]?.barcode, 10);
+        const next = Number.isFinite(last) ? last + 1 : 1;
         formData.barcode = String(next).padStart(10, "0");
       }
       const data = {

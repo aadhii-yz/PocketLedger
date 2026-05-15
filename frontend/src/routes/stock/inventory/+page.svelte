@@ -196,12 +196,10 @@
       };
 
       stockEntries = [newEntry, ...stockEntries];
-      products = products.map((p) =>
-        p.id === formData.productId
-          ? { ...p, quantity: p.quantity + Number(formData.quantity) }
-          : p,
-      );
       resetForm();
+      // Resync from server: the adjust may have created a new (product,
+      // location) stock row, so a local id-only patch can't be trusted.
+      await loadData();
     } catch (e: any) {
       errorMsg = e.message || "Failed to adjust stock";
     } finally {

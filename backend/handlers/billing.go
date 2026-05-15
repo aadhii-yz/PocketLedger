@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"fmt"
+	"math"
 	"net/http"
 	"time"
 
@@ -38,6 +39,17 @@ func CreateBill(app core.App) func(*core.RequestEvent) error {
 		}
 		if len(req.Items) == 0 {
 			return e.JSON(http.StatusBadRequest, map[string]string{"message": "cart is empty"})
+		}
+		for _, item := range req.Items {
+			if item.ProductID == "" {
+				return e.JSON(http.StatusBadRequest, map[string]string{"message": "each item requires a product_id"})
+			}
+			if item.Quantity <= 0 || math.IsNaN(item.Quantity) || math.IsInf(item.Quantity, 0) {
+				return e.JSON(http.StatusBadRequest, map[string]string{"message": "item quantity must be a positive number"})
+			}
+			if item.UnitPrice < 0 || math.IsNaN(item.UnitPrice) || math.IsInf(item.UnitPrice, 0) {
+				return e.JSON(http.StatusBadRequest, map[string]string{"message": "item unit_price must be a non-negative number"})
+			}
 		}
 
 		// Resolve shop: explicit shop_id → fallback to the POS user's assigned_shop.

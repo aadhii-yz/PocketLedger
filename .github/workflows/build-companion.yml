@@ -34,23 +34,20 @@ jobs:
       - name: Install cargo-ndk
         run: cargo install cargo-ndk
 
-      - name: Install Tauri CLI
-        run: cargo install tauri-cli --version "^2.0"
-
       - name: Install frontend deps
         working-directory: companion_app
         run: npm ci
 
       - name: Init Tauri Android project
         working-directory: companion_app
-        run: cargo tauri android init
+        run: npm run tauri -- android init
 
       - name: Accept Android SDK licenses
         run: yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --licenses || true
 
       - name: Build Android APK
         working-directory: companion_app
-        run: cargo tauri android build --apk
+        run: npm run tauri -- android build --apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
@@ -75,16 +72,29 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install Tauri CLI
-        run: cargo install tauri-cli --version "^2.0"
-
       - name: Install frontend deps
         working-directory: companion_app
         run: npm ci
 
+      - name: Build frontend
+        working-directory: companion_app
+        run: npm run build
+
       - name: Build Windows installer
         working-directory: companion_app
-        run: cargo tauri build
+        run: npm run tauri -- build
+
+      - name: Verify Windows bundle exists
+        working-directory: companion_app
+        shell: pwsh
+        run: |
+          $bundle = "src-tauri/target/release/bundle"
+          $artifacts = Get-ChildItem -Path $bundle -Recurse -Include *.exe,*.msi -ErrorAction SilentlyContinue
+          if (-not $artifacts) {
+            Write-Error "No .exe/.msi produced under $bundle — Windows bundling failed."
+            exit 1
+          }
+          $artifacts | ForEach-Object { Write-Host "Built: $($_.FullName)" }
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4

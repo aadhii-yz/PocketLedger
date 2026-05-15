@@ -183,8 +183,17 @@
   );
 
   function addToCart(product: Product) {
+    if (product.quantity <= 0) {
+      errorMsg = `"${product.name}" is out of stock`;
+      return;
+    }
     const existingItem = cart.find((item) => item.product.id === product.id);
     if (existingItem) {
+      if (existingItem.quantity >= product.quantity) {
+        errorMsg = `Only ${product.quantity} in stock for "${product.name}"`;
+        searchInputEl?.focus();
+        return;
+      }
       cart = cart.map((item) =>
         item.product.id === product.id
           ? { ...item, quantity: item.quantity + 1 }
