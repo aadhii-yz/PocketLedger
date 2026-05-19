@@ -64,14 +64,14 @@ export async function loadPrintSettings(): Promise<PrintSettings> {
 }
 
 // ── Flutter WebView JS channel ────────────────────────────────────────────────
-// When the PWA runs inside the companion app's WebView, Flutter injects
-// window.FlutterPrint. postMessage() is synchronous and always succeeds here
-// (TCP errors are logged inside Dart); return true immediately so we skip the
-// localhost HTTP ping and QZ Tray entirely.
+// When the PWA runs inside the companion app's WebView, flutter_inappwebview
+// injects window.flutter_inappwebview. callHandler() is async but fire-and-
+// forget here (TCP errors are logged inside Dart); return true immediately so
+// we skip the localhost HTTP ping and QZ Tray entirely.
 
-type FlutterPrintChannel = { postMessage: (message: string) => void };
-const _flutter = (): FlutterPrintChannel | undefined =>
-  (window as unknown as { FlutterPrint?: FlutterPrintChannel }).FlutterPrint;
+type FlutterInAppWebView = { callHandler: (name: string, ...args: unknown[]) => Promise<unknown> };
+const _flutter = (): FlutterInAppWebView | undefined =>
+  (window as unknown as { flutter_inappwebview?: FlutterInAppWebView }).flutter_inappwebview;
 
 function _flutterPrintBarcode(
   product: { name: string; sku: string; barcode: string; selling_price: number; details?: Record<string, string> },
@@ -79,7 +79,7 @@ function _flutterPrintBarcode(
 ): boolean {
   const ch = _flutter();
   if (!ch) return false;
-  ch.postMessage(JSON.stringify({
+  ch.callHandler('FlutterPrint', {
     type: 'barcode',
     name: product.name,
     sku: product.sku,
@@ -89,14 +89,14 @@ function _flutterPrintBarcode(
     show_sku: settings.barcode_show_sku,
     show_price: settings.barcode_show_price,
     shop_name: settings.shop_name,
-  }));
+  });
   return true;
 }
 
 function _flutterPrintReceipt(bill: BillPrintData, settings: PrintSettings): boolean {
   const ch = _flutter();
   if (!ch) return false;
-  ch.postMessage(JSON.stringify({
+  ch.callHandler('FlutterPrint', {
     type: 'receipt',
     bill_number: bill.bill_number,
     shop_name: settings.shop_name || bill.shop_name,
@@ -115,7 +115,7 @@ function _flutterPrintReceipt(bill: BillPrintData, settings: PrintSettings): boo
     payment_method: bill.payment_method,
     customer_name: bill.customer_name ?? '',
     customer_phone: bill.customer_phone ?? '',
-  }));
+  });
   return true;
 }
 
