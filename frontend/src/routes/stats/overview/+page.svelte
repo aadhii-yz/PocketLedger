@@ -396,7 +396,8 @@
           <select
             value={billsPerPage}
             onchange={(e) => {
-              billsPerPage = parseInt((e.target as HTMLSelectElement).value);
+              const v = Number((e.target as HTMLSelectElement).value);
+              billsPerPage = Number.isFinite(v) ? v : 10;
               loadBills(1);
             }}
             class="px-2 py-1 bg-input-background border border-border rounded-lg outline-none focus:ring-2 focus:ring-ring text-sm"
