@@ -1,8 +1,13 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import '../services/settings_service.dart';
 import '../services/print_server.dart';
+import '../services/printer_connection.dart';
+import '../services/printer_discovery.dart';
+import '../services/escpos_printer.dart';
+import '../services/tspl_printer.dart';
 
 class HomeScreen extends StatefulWidget {
   final VoidCallback? onSaved;
@@ -14,28 +19,32 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final _urlCtrl = TextEditingController();
-  final _barcodeIpCtrl = TextEditingController();
-  final _barcodePortCtrl = TextEditingController();
-  final _receiptIpCtrl = TextEditingController();
-  final _receiptPortCtrl = TextEditingController();
+  final _receiptManualIpCtrl = TextEditingController();
+  final _barcodeManualIpCtrl = TextEditingController();
 
   bool _serverRunning = false;
   String _statusMsg = 'Starting…';
+  Timer? _countdownTimer;
 
   @override
   void initState() {
     super.initState();
     final s = SettingsService.instance;
     _urlCtrl.text = s.pocketledgerUrl;
-    _barcodeIpCtrl.text = s.barcodePrinterIp;
-    _barcodePortCtrl.text = s.barcodePrinterPort.toString();
-    _receiptIpCtrl.text = s.receiptPrinterIp;
-    _receiptPortCtrl.text = s.receiptPrinterPort.toString();
+    _receiptManualIpCtrl.text = s.receiptPrinterIp;
+    _barcodeManualIpCtrl.text = s.barcodePrinterIp;
+
+    PrinterDiscovery.instance.addListener(_onDiscoveryUpdate);
+    PrinterDiscovery.instance.startDiscovery();
+
+    _countdownTimer =
+        Timer.periodic(const Duration(seconds: 1), (_) => _tick());
 
     if (Platform.isAndroid) {
       setState(() {
         _serverRunning = true;
-        _statusMsg = 'Print service active on localhost:${s.serverPort}';
+        _statusMsg =
+            'Print service active on localhost:${s.serverPort}';
       });
     } else {
       _startDesktopServer();
@@ -44,12 +53,23 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    PrinterDiscovery.instance.removeListener(_onDiscoveryUpdate);
+    _countdownTimer?.cancel();
     _urlCtrl.dispose();
-    _barcodeIpCtrl.dispose();
-    _barcodePortCtrl.dispose();
-    _receiptIpCtrl.dispose();
-    _receiptPortCtrl.dispose();
+    _receiptManualIpCtrl.dispose();
+    _barcodeManualIpCtrl.dispose();
     super.dispose();
+  }
+
+  void _onDiscoveryUpdate() {
+    if (mounted) setState(() {});
+  }
+
+  void _tick() {
+    if (!mounted) return;
+    final d = PrinterDiscovery.instance;
+    final hasCountdown = d.receiptNextRetry != null || d.barcodeNextRetry != null;
+    if (hasCountdown) setState(() {});
   }
 
   Future<void> _startDesktopServer() async {
@@ -57,7 +77,8 @@ class _HomeScreenState extends State<HomeScreen> {
       await PrintServer.start(SettingsService.instance.serverPort);
       setState(() {
         _serverRunning = true;
-        _statusMsg = 'Print server running on localhost:${SettingsService.instance.serverPort}';
+        _statusMsg =
+            'Print server running on localhost:${SettingsService.instance.serverPort}';
       });
     } catch (e) {
       setState(() {
@@ -67,13 +88,9 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> _save() async {
+  Future<void> _saveUrl() async {
     final s = SettingsService.instance;
     s.pocketledgerUrl = _urlCtrl.text.trim();
-    s.barcodePrinterIp = _barcodeIpCtrl.text.trim();
-    s.barcodePrinterPort = int.tryParse(_barcodePortCtrl.text.trim()) ?? 9100;
-    s.receiptPrinterIp = _receiptIpCtrl.text.trim();
-    s.receiptPrinterPort = int.tryParse(_receiptPortCtrl.text.trim()) ?? 9100;
     await s.save();
 
     if (Platform.isAndroid) {
@@ -81,15 +98,92 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Settings saved')),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Settings saved')));
       widget.onSaved?.call();
     }
   }
 
+  // ── Manual IP overrides ────────────────────────────────────────────────────
+
+  Future<void> _setReceiptManual() async {
+    final ip = _receiptManualIpCtrl.text.trim();
+    if (ip.isEmpty) return;
+    final s = SettingsService.instance;
+    s.receiptUsbPath = '';
+    s.receiptPrinterIp = ip;
+    s.receiptPrinterPort = 9100;
+    await s.save();
+    if (Platform.isAndroid) {
+      FlutterBackgroundService().invoke('reload_settings');
+    }
+    PrinterDiscovery.instance
+        .overrideReceiptConnection(TcpConnection(ip, 9100));
+    if (mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Receipt printer set to $ip')));
+    }
+  }
+
+  Future<void> _setBarcodeManual() async {
+    final ip = _barcodeManualIpCtrl.text.trim();
+    if (ip.isEmpty) return;
+    final s = SettingsService.instance;
+    s.barcodePrinterIp = ip;
+    s.barcodePrinterPort = 9100;
+    await s.save();
+    if (Platform.isAndroid) {
+      FlutterBackgroundService().invoke('reload_settings');
+    }
+    PrinterDiscovery.instance
+        .overrideBarcodeConnection(TcpConnection(ip, 9100));
+    if (mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Label printer set to $ip')));
+    }
+  }
+
+  // ── Test prints ────────────────────────────────────────────────────────────
+
+  Future<void> _testReceipt() async {
+    final conn = SettingsService.instance.receiptConnection;
+    if (conn == null) return;
+    try {
+      await EscPosPrinter.testPrint(connection: conn);
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('Test receipt sent')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Test failed: $e')));
+      }
+    }
+  }
+
+  Future<void> _testBarcode() async {
+    final conn = SettingsService.instance.barcodeConnection;
+    if (conn == null) return;
+    try {
+      await TsplPrinter.testPrint(connection: conn);
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('Test label sent')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Test failed: $e')));
+      }
+    }
+  }
+
+  // ── Build ─────────────────────────────────────────────────────────────────
+
   @override
   Widget build(BuildContext context) {
+    final d = PrinterDiscovery.instance;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Settings'),
@@ -102,7 +196,9 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             // Server status
             Card(
-              color: _serverRunning ? Colors.green.shade50 : Colors.red.shade50,
+              color: _serverRunning
+                  ? Colors.green.shade50
+                  : Colors.red.shade50,
               child: ListTile(
                 leading: Icon(
                   _serverRunning ? Icons.check_circle : Icons.error,
@@ -115,13 +211,12 @@ class _HomeScreenState extends State<HomeScreen> {
                 subtitle: Text(_statusMsg),
               ),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 16),
 
             // PocketLedger URL
-            const Text(
-              'PocketLedger',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-            ),
+            const Text('PocketLedger',
+                style:
+                    TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
             const SizedBox(height: 8),
             TextField(
               controller: _urlCtrl,
@@ -133,73 +228,267 @@ class _HomeScreenState extends State<HomeScreen> {
               keyboardType: TextInputType.url,
               autocorrect: false,
             ),
-            const SizedBox(height: 24),
-
-            // Barcode printer
-            const Text(
-              'Barcode Printer (TVS LP 46)',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-            ),
             const SizedBox(height: 8),
-            TextField(
-              controller: _barcodeIpCtrl,
-              decoration: const InputDecoration(
-                labelText: 'IP Address',
-                hintText: '192.168.1.100',
-                border: OutlineInputBorder(),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: _saveUrl,
+                icon: const Icon(Icons.save),
+                label: const Text('Save & Open App'),
               ),
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _barcodePortCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Port',
-                hintText: '9100',
-                border: OutlineInputBorder(),
-              ),
-              keyboardType: TextInputType.number,
             ),
             const SizedBox(height: 24),
 
             // Receipt printer
-            const Text(
-              'Receipt Printer (TVS RP 3230)',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            _PrinterCard(
+              title: 'Receipt Printer (TVS RP 3230)',
+              state: d.receiptState,
+              nextRetry: d.receiptNextRetry,
+              onScanNow: () => PrinterDiscovery.instance.scanReceiptNow(),
+              onAssign: (ip) =>
+                  PrinterDiscovery.instance.assignReceiptIp(ip),
+              onTestPrint: d.receiptState.status == DiscoveryStatus.found
+                  ? _testReceipt
+                  : null,
+              manualIpCtrl: _receiptManualIpCtrl,
+              onSaveManual: _setReceiptManual,
+              usbNote: Platform.isLinux || Platform.isWindows,
             ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _receiptIpCtrl,
-              decoration: const InputDecoration(
-                labelText: 'IP Address',
-                hintText: '192.168.1.101',
-                border: OutlineInputBorder(),
-              ),
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _receiptPortCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Port',
-                hintText: '9100',
-                border: OutlineInputBorder(),
-              ),
-              keyboardType: TextInputType.number,
-            ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 16),
 
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                onPressed: _save,
-                icon: const Icon(Icons.save),
-                label: const Text('Save & Open App'),
-              ),
-        ),
+            // Label printer
+            _PrinterCard(
+              title: 'Label Printer (TVS LP 46)',
+              state: d.barcodeState,
+              nextRetry: d.barcodeNextRetry,
+              onScanNow: () => PrinterDiscovery.instance.scanBarcodeNow(),
+              onAssign: (ip) =>
+                  PrinterDiscovery.instance.assignBarcodeIp(ip),
+              onTestPrint: d.barcodeState.status == DiscoveryStatus.found
+                  ? _testBarcode
+                  : null,
+              manualIpCtrl: _barcodeManualIpCtrl,
+              onSaveManual: _setBarcodeManual,
+            ),
+
+            const SizedBox(height: 32),
           ],
         ),
       ),
+    );
+  }
+}
+
+// ── Printer card widget ────────────────────────────────────────────────────
+
+class _PrinterCard extends StatelessWidget {
+  final String title;
+  final PrinterState state;
+  final DateTime? nextRetry;
+  final VoidCallback onScanNow;
+  final void Function(String ip) onAssign;
+  final VoidCallback? onTestPrint;
+  final TextEditingController manualIpCtrl;
+  final VoidCallback onSaveManual;
+  final bool usbNote;
+
+  const _PrinterCard({
+    required this.title,
+    required this.state,
+    required this.nextRetry,
+    required this.onScanNow,
+    required this.onAssign,
+    required this.onTestPrint,
+    required this.manualIpCtrl,
+    required this.onSaveManual,
+    this.usbNote = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title,
+                style: const TextStyle(
+                    fontWeight: FontWeight.bold, fontSize: 15)),
+            const SizedBox(height: 10),
+            _statusRow(),
+            if (state.status == DiscoveryStatus.noPermission) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade50,
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: Colors.orange.shade200),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Device: ${state.candidates?.join(', ') ?? ''}',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'Fix option A — add to lp group (one-time):',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                    ),
+                    SelectableText(
+                      '  sudo usermod -aG lp \$USER\n  newgrp lp',
+                      style: TextStyle(
+                          fontSize: 11,
+                          fontFamily: 'monospace',
+                          color: Colors.grey.shade700),
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'Fix option B — register in CUPS (auto-detected next launch):',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                    ),
+                    SelectableText(
+                      '  sudo lpadmin -p QUEUE_NAME -E \\\n'
+                      '    -v usb://TVS-E/MODEL -m raw',
+                      style: TextStyle(
+                          fontSize: 11,
+                          fontFamily: 'monospace',
+                          color: Colors.grey.shade700),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            if (state.status == DiscoveryStatus.needsSelection) ...[
+              const SizedBox(height: 8),
+              ...state.candidates!.map(
+                (ip) => Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.circle_outlined,
+                          size: 14, color: Colors.grey),
+                      const SizedBox(width: 6),
+                      Expanded(
+                          child: Text(ip,
+                              style: const TextStyle(fontSize: 13))),
+                      TextButton(
+                        onPressed: () => onAssign(ip),
+                        child: const Text('Use this'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                OutlinedButton.icon(
+                  onPressed: state.status == DiscoveryStatus.searching
+                      ? null
+                      : onScanNow,
+                  icon: const Icon(Icons.refresh, size: 16),
+                  label: const Text('Scan Now'),
+                ),
+                if (onTestPrint != null) ...[
+                  const SizedBox(width: 8),
+                  OutlinedButton.icon(
+                    onPressed: onTestPrint,
+                    icon: const Icon(Icons.print, size: 16),
+                    label: const Text('Test'),
+                  ),
+                ],
+              ],
+            ),
+            const SizedBox(height: 4),
+            ExpansionTile(
+              tilePadding: EdgeInsets.zero,
+              title: const Text('Manual override',
+                  style: TextStyle(fontSize: 13, color: Colors.grey)),
+              children: [
+                if (usbNote)
+                  const Padding(
+                    padding: EdgeInsets.only(bottom: 8),
+                    child: Text(
+                      'USB is auto-detected on Linux/Windows. '
+                      'Enter an IP only to force a network connection.',
+                      style:
+                          TextStyle(fontSize: 12, color: Colors.grey),
+                    ),
+                  ),
+                TextField(
+                  controller: manualIpCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'IP Address',
+                    hintText: '192.168.1.100',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true),
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton(
+                    onPressed: onSaveManual,
+                    child: const Text('Set'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _statusRow() {
+    final Color color;
+    final IconData icon;
+    final String label;
+
+    switch (state.status) {
+      case DiscoveryStatus.found:
+        color = Colors.green;
+        icon = Icons.check_circle;
+        label = state.connection.toString();
+      case DiscoveryStatus.searching:
+        color = Colors.amber.shade700;
+        icon = Icons.search;
+        label = 'Searching…';
+      case DiscoveryStatus.needsSelection:
+        color = Colors.orange;
+        icon = Icons.help_outline;
+        label = 'Multiple printers found — select one:';
+      case DiscoveryStatus.noPermission:
+        color = Colors.orange;
+        icon = Icons.lock_outline;
+        label = 'USB device found — no write permission';
+      case DiscoveryStatus.failed:
+        final secs = nextRetry != null
+            ? nextRetry!.difference(DateTime.now()).inSeconds
+            : 0;
+        color = Colors.red;
+        icon = Icons.error_outline;
+        label = secs > 0
+            ? 'Not found — retrying in ${secs}s'
+            : 'Not found';
+    }
+
+    return Row(
+      children: [
+        Icon(icon, color: color, size: 18),
+        const SizedBox(width: 6),
+        Flexible(
+          child: Text(label,
+              style: TextStyle(color: color, fontSize: 13)),
+        ),
+      ],
     );
   }
 }

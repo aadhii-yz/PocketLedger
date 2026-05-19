@@ -55,16 +55,16 @@ class PrintServer {
   static Future<Response> _printBarcode(Request req) async {
     try {
       final body = jsonDecode(await req.readAsString()) as Map<String, dynamic>;
-      final s = SettingsService.instance;
+      final conn = SettingsService.instance.barcodeConnection;
 
-      if (s.barcodePrinterIp.isEmpty) {
+      if (conn == null) {
         return Response(422,
-            body: jsonEncode({'error': 'Barcode printer IP not configured in companion app'}));
+            body: jsonEncode(
+                {'error': 'Barcode printer not configured in companion app'}));
       }
 
       await TsplPrinter.printBarcode(
-        ip: s.barcodePrinterIp,
-        port: s.barcodePrinterPort,
+        connection: conn,
         name: body['name'] as String? ?? '',
         barcode: body['barcode'] as String? ?? '',
         sku: body['sku'] as String? ?? '',
@@ -85,16 +85,16 @@ class PrintServer {
   static Future<Response> _printReceipt(Request req) async {
     try {
       final body = jsonDecode(await req.readAsString()) as Map<String, dynamic>;
-      final s = SettingsService.instance;
+      final conn = SettingsService.instance.receiptConnection;
 
-      if (s.receiptPrinterIp.isEmpty) {
+      if (conn == null) {
         return Response(422,
-            body: jsonEncode({'error': 'Receipt printer IP not configured in companion app'}));
+            body: jsonEncode(
+                {'error': 'Receipt printer not configured in companion app'}));
       }
 
       await EscPosPrinter.printReceipt(
-        ip: s.receiptPrinterIp,
-        port: s.receiptPrinterPort,
+        connection: conn,
         data: body,
       );
 

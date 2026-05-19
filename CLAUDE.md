@@ -138,12 +138,18 @@ Flutter app that serves a dual purpose: (1) it **embeds the SvelteKit PWA in a W
 **Why it exists:** Cloud backend → can't reach LAN printers. Browser PWA → can't open raw TCP. Companion app runs locally on the same device/network as the printers.
 
 **App structure (two tabs):**
-- **App tab** (`lib/screens/web_screen.dart`) — `flutter_inappwebview` WebView loading the configured PocketLedger URL. The plugin injects `window.flutter_inappwebview` into the page; `print.ts` calls `window.flutter_inappwebview.callHandler('FlutterPrint', {type, ...data})` which triggers `_onPrint()` in Dart → TCP print directly. No HTTP round-trip needed.
-- **Settings tab** (`lib/screens/home_screen.dart`) — PocketLedger URL, barcode printer IP/port, receipt printer IP/port. Saving reloads the WebView with the new URL.
+- **App tab** (`lib/screens/web_screen.dart`) — `flutter_inappwebview` WebView loading the configured PocketLedger URL. The plugin injects `window.flutter_inappwebview` into the page; `print.ts` calls `window.flutter_inappwebview.callHandler('FlutterPrint', {type, ...data})` which triggers `_onPrint()` in Dart → USB/TCP print directly. No HTTP round-trip needed.
+- **Settings tab** (`lib/screens/home_screen.dart`) — PocketLedger URL field + auto-detect status cards for each printer. Saving the URL reloads the WebView. Printer connections are discovered automatically (see below); manual IP override is available as a collapsible fallback.
 
-**Printer support** (see [`docs/printers.md`](docs/printers.md) for full hardware specs, connectivity options, and USB test commands):
-- `lib/services/tspl_printer.dart` — TSPL commands for **TVS LP 46 dlite** (barcode labels, 50 mm × 30 mm, 203 DPI). Sends over TCP to the printer's WiFi IP:9100.
-- `lib/services/escpos_printer.dart` — ESC/POS bytes for **TVS RP 3230** (80 mm thermal receipt). Same TCP approach.
+**Printer support** (see [`docs/printers.md`](docs/printers.md) for full hardware specs and [`docs/linux-setup.md`](docs/linux-setup.md) for Linux CUPS/USB setup):
+- `lib/services/tspl_printer.dart` — TSPL commands for **TVS LP 46 dlite** (barcode labels, 50 mm × 30 mm, 203 DPI).
+- `lib/services/escpos_printer.dart` — ESC/POS bytes for **TVS RP 3230** (80 mm thermal receipt).
+- `lib/services/printer_connection.dart` — sealed `PrinterConnection` type: `UsbConnection(path)` or `TcpConnection(ip, port)`. Both printer services accept this and dispatch to the correct transport.
+- `lib/services/printer_discovery.dart` — auto-detection singleton (`ChangeNotifier`). Detection chain per platform:
+  - **Linux:** CUPS queue via `lpstat -v` (matches `3230`/`lp46`/`dlite` in name or URI) → direct `/dev/usb/lp*` → TCP port 9100 LAN scan
+  - **Windows:** USB printer port via PowerShell `Win32_Printer` → TCP scan
+  - **Android:** TCP port 9100 LAN scan only
+  - Label printer additionally recognises `192.168.4.1` (SoftAP mode). Retries every 30 s on failure. Discovered connections are persisted in `SharedPreferences` and restored immediately on next launch.
 
 **HTTP API (all on `localhost:8765`) — used when accessing PocketLedger from a browser instead of the WebView:**
 - `GET /status` → `{ ok: true }` — used by `print.ts` as the availability check
@@ -156,7 +162,7 @@ Printer IPs are stored in the companion app's own `SharedPreferences` (configure
 
 **Building:** Triggered manually via GitHub Actions (`.github/workflows/build-companion.yml`). The workflow runs `flutter create . --no-pub` to generate platform boilerplate, restores our `lib/` and `pubspec.yaml` via `git checkout`, runs `patch_manifest.py` to inject the foreground-service permissions into `AndroidManifest.xml`, then builds APK (ubuntu runner), Windows exe (windows runner), and Linux binary (ubuntu runner). Artifacts are published to a GitHub Release. The Linux binary is distributed as a `.tar.gz` of `build/linux/x64/release/bundle/`. Linux users need `wpewebkit` and `libwpe` installed (`sudo pacman -S wpewebkit libwpe` on Arch). The `linux/runner/main.cc` sets `LIBGL_ALWAYS_SOFTWARE=true` at startup to work around a WPE EGL texture compositing issue on Intel/i915 hardware.
 
-**First-time device setup:** Open companion app → go to Settings tab → enter PocketLedger URL + printer IPs → Save & Open App. The App tab loads the PWA. `window.flutter_inappwebview` is automatically available; printing goes directly via the JS channel without any HTTP ping.
+**First-time device setup:** Open companion app → Settings tab → enter PocketLedger URL → Save & Open App. Printer connections are detected automatically; no IP entry required. On Linux, register printers in CUPS first (see `docs/linux-setup.md`). `window.flutter_inappwebview` is automatically available in the WebView; printing goes directly via the JS channel without any HTTP ping.
 
 ### Data model summary
 

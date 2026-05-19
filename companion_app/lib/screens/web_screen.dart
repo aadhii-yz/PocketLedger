@@ -20,10 +20,11 @@ class _WebScreenState extends State<WebScreen> {
     try {
       final data = Map<String, dynamic>.from(args[0] as Map);
       final s = SettingsService.instance;
-      if (data['type'] == 'barcode' && s.barcodePrinterIp.isNotEmpty) {
+      if (data['type'] == 'barcode') {
+        final conn = s.barcodeConnection;
+        if (conn == null) return;
         await TsplPrinter.printBarcode(
-          ip: s.barcodePrinterIp,
-          port: s.barcodePrinterPort,
+          connection: conn,
           name: data['name'] as String? ?? '',
           barcode: data['barcode'] as String? ?? '',
           sku: data['sku'] as String? ?? '',
@@ -33,10 +34,11 @@ class _WebScreenState extends State<WebScreen> {
           shopName: data['shop_name'] as String? ?? '',
           details: Map<String, String>.from(data['details'] as Map? ?? {}),
         );
-      } else if (data['type'] == 'receipt' && s.receiptPrinterIp.isNotEmpty) {
+      } else if (data['type'] == 'receipt') {
+        final conn = s.receiptConnection;
+        if (conn == null) return;
         await EscPosPrinter.printReceipt(
-          ip: s.receiptPrinterIp,
-          port: s.receiptPrinterPort,
+          connection: conn,
           data: data,
         );
       }
@@ -82,7 +84,8 @@ class _WebScreenState extends State<WebScreen> {
         onLoadStop: (controller, url) => setState(() => _loading = false),
         onReceivedError: (controller, request, error) => setState(() {
           _loading = false;
-          _errorMessage = '${error.type.name}: ${error.description}\n${request.url}';
+          _errorMessage =
+              '${error.type.name}: ${error.description}\n${request.url}';
         }),
       ),
       if (_loading) const LinearProgressIndicator(),
@@ -96,7 +99,9 @@ class _WebScreenState extends State<WebScreen> {
               children: [
                 const Icon(Icons.error_outline, size: 48, color: Colors.red),
                 const SizedBox(height: 16),
-                const Text('Failed to load', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                const Text('Failed to load',
+                    style:
+                        TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 8),
                 Text(
                   _errorMessage!,

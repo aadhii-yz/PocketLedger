@@ -1,8 +1,10 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'services/settings_service.dart';
 import 'services/background_service.dart';
+import 'services/printer_discovery.dart';
 import 'screens/home_screen.dart';
 import 'screens/web_screen.dart';
 
@@ -11,8 +13,12 @@ void main() async {
   await SettingsService.instance.load();
 
   if (Platform.isAndroid) {
-    // Android 13+ requires POST_NOTIFICATIONS at runtime for the foreground
-    // service notification.
+    // When discovery auto-finds a printer and saves new IPs to SharedPreferences,
+    // notify the background service isolate to reload its copy of settings.
+    PrinterDiscovery.onSettingsUpdated = () {
+      FlutterBackgroundService().invoke('reload_settings');
+    };
+
     await Permission.notification.request();
     await initBackgroundService();
   }
@@ -46,8 +52,6 @@ class MainShell extends StatefulWidget {
 
 class _MainShellState extends State<MainShell> {
   int _tab = 0;
-  // Incremented after settings save to force WebScreen to reinitialise with
-  // the new URL (ValueKey causes Flutter to drop and recreate the widget).
   int _webKey = 0;
 
   void _onSettingsSaved() {
@@ -72,7 +76,8 @@ class _MainShellState extends State<MainShell> {
         onDestinationSelected: (i) => setState(() => _tab = i),
         destinations: const [
           NavigationDestination(icon: Icon(Icons.web), label: 'App'),
-          NavigationDestination(icon: Icon(Icons.settings), label: 'Settings'),
+          NavigationDestination(
+              icon: Icon(Icons.settings), label: 'Settings'),
         ],
       ),
     );

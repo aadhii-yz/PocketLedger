@@ -1,15 +1,32 @@
 import 'dart:io';
 import 'dart:typed_data';
+import 'printer_connection.dart';
 
 // ESC/POS for TVS RP 3230 (80mm, 42-char line width)
 class EscPosPrinter {
   static Future<void> printReceipt({
-    required String ip,
-    required int port,
+    required PrinterConnection connection,
     required Map<String, dynamic> data,
   }) async {
     final bytes = _build(data);
-    await _send(ip, port, bytes);
+    await _sendToConnection(connection, bytes);
+  }
+
+  static Future<void> testPrint({required PrinterConnection connection}) async {
+    final p = _Buf();
+    p.cmd([0x1b, 0x40]); // INIT
+    p.cmd([0x1b, 0x61, 0x01]); // CENTER
+    p.text('-- TEST PRINT --');
+    p.lf();
+    p.text('PocketLedger');
+    p.lf();
+    p.text('Receipt Printer OK');
+    p.lf();
+    p.lf();
+    p.lf();
+    p.lf();
+    p.cmd([0x1d, 0x56, 0x00]); // FULL CUT
+    await _sendToConnection(connection, p.build());
   }
 
   static Uint8List _build(Map<String, dynamic> d) {
@@ -28,16 +45,27 @@ class EscPosPrinter {
     p.cmd([0x1b, 0x45, 0x00]); // BOLD OFF
 
     final addr = d['shop_address'] as String? ?? '';
-    if (addr.isNotEmpty) { p.text(addr); p.lf(); }
+    if (addr.isNotEmpty) {
+      p.text(addr);
+      p.lf();
+    }
     final phone = d['shop_phone'] as String? ?? '';
-    if (phone.isNotEmpty) { p.text('Ph: $phone'); p.lf(); }
+    if (phone.isNotEmpty) {
+      p.text('Ph: $phone');
+      p.lf();
+    }
     final gst = d['gst_number'] as String? ?? '';
-    if (gst.isNotEmpty) { p.text('GST: $gst'); p.lf(); }
+    if (gst.isNotEmpty) {
+      p.text('GST: $gst');
+      p.lf();
+    }
 
     p.cmd([0x1b, 0x61, 0x00]); // LEFT
     p.sep();
-    p.text('Date   : ${_fmtDate(d['date'] as String? ?? '')}'); p.lf();
-    p.text('Bill No: ${d['bill_number'] ?? ''}'); p.lf();
+    p.text('Date   : ${_fmtDate(d['date'] as String? ?? '')}');
+    p.lf();
+    p.text('Bill No: ${d['bill_number'] ?? ''}');
+    p.lf();
     p.sep();
 
     // ── Items ────────────────────────────────────────────────────────────────
@@ -60,7 +88,8 @@ class EscPosPrinter {
       final rate = (m['unit_price'] as num? ?? 0).toDouble();
       final amt = qty * rate;
       p.text(_rpad(name, nw));
-      p.text(_lpad(_n(qty % 1 == 0 ? qty.toInt().toString() : _fmt(qty)), qw));
+      p.text(
+          _lpad(_n(qty % 1 == 0 ? qty.toInt().toString() : _fmt(qty)), qw));
       p.text(_lpad(_fmt(rate), rw));
       p.text(_lpad(_fmt(amt), aw));
       p.lf();
@@ -75,38 +104,54 @@ class EscPosPrinter {
       final subtotal = (d['subtotal'] as num? ?? 0).toDouble();
       final tax = (d['tax_total'] as num? ?? 0).toDouble();
       final disc = (d['discount'] as num? ?? 0).toDouble();
-      p.text(_rpad('Subtotal', lw)); p.text(_lpad('Rs.${_fmt(subtotal)}', 10)); p.lf();
-      p.text(_rpad('GST', lw));      p.text(_lpad('Rs.${_fmt(tax)}', 10));      p.lf();
+      p.text(_rpad('Subtotal', lw));
+      p.text(_lpad('Rs.${_fmt(subtotal)}', 10));
+      p.lf();
+      p.text(_rpad('GST', lw));
+      p.text(_lpad('Rs.${_fmt(tax)}', 10));
+      p.lf();
       if (disc > 0) {
-        p.text(_rpad('Discount', lw)); p.text(_lpad('-Rs.${_fmt(disc)}', 10)); p.lf();
+        p.text(_rpad('Discount', lw));
+        p.text(_lpad('-Rs.${_fmt(disc)}', 10));
+        p.lf();
       }
     }
     final grand = (d['grand_total'] as num? ?? 0).toDouble();
     p.cmd([0x1b, 0x45, 0x01]);
-    p.text(_rpad('TOTAL', lw)); p.text(_lpad('Rs.${_fmt(grand)}', 10)); p.lf();
+    p.text(_rpad('TOTAL', lw));
+    p.text(_lpad('Rs.${_fmt(grand)}', 10));
+    p.lf();
     p.cmd([0x1b, 0x45, 0x00]);
 
     p.sep();
-    p.text('Payment: ${((d['payment_method'] as String? ?? '')).toUpperCase()}'); p.lf();
+    p.text(
+        'Payment: ${((d['payment_method'] as String? ?? '')).toUpperCase()}');
+    p.lf();
 
     final showCust = d['show_customer_info'] as bool? ?? true;
     final cName = d['customer_name'] as String? ?? '';
     final cPhone = d['customer_phone'] as String? ?? '';
     if (showCust && (cName.isNotEmpty || cPhone.isNotEmpty)) {
-      final cust = [if (cName.isNotEmpty) cName, if (cPhone.isNotEmpty) cPhone].join(' / ');
+      final cust =
+          [if (cName.isNotEmpty) cName, if (cPhone.isNotEmpty) cPhone]
+              .join(' / ');
       p.sep();
-      p.text('Customer: $cust'); p.lf();
+      p.text('Customer: $cust');
+      p.lf();
     }
 
     final footer = d['receipt_footer'] as String? ?? '';
     if (footer.isNotEmpty) {
       p.sep();
       p.cmd([0x1b, 0x61, 0x01]);
-      p.text(footer); p.lf();
+      p.text(footer);
+      p.lf();
       p.cmd([0x1b, 0x61, 0x00]);
     }
 
-    p.lf(); p.lf(); p.lf();
+    p.lf();
+    p.lf();
+    p.lf();
     p.cmd([0x1d, 0x56, 0x00]); // FULL CUT
     return p.build();
   }
@@ -117,7 +162,10 @@ class EscPosPrinter {
   static String _fmtDate(String iso) {
     try {
       final d = DateTime.parse(iso).toLocal();
-      const m = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      const m = [
+        'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+      ];
       return '${d.day.toString().padLeft(2, '0')} ${m[d.month - 1]} ${d.year}';
     } catch (_) {
       return iso;
@@ -134,15 +182,88 @@ class EscPosPrinter {
     return s.padLeft(w);
   }
 
-  static Future<void> _send(String ip, int port, Uint8List data) async {
-    final socket = await Socket.connect(
-      ip,
-      port,
-      timeout: const Duration(seconds: 5),
-    );
+  // ── Transport ─────────────────────────────────────────────────────────────
+
+  static Future<void> _sendToConnection(
+      PrinterConnection connection, Uint8List data) async {
+    switch (connection) {
+      case TcpConnection(:final ip, :final port):
+        await _sendTcp(ip, port, data);
+      case UsbConnection(:final path):
+        if (Platform.isLinux) {
+          await _sendLinuxUsb(path, data);
+        } else if (Platform.isWindows) {
+          await _sendWindowsUsb(path, data);
+        } else {
+          throw UnsupportedError(
+              'USB printing not supported on ${Platform.operatingSystem}');
+        }
+    }
+  }
+
+  static Future<void> _sendTcp(String ip, int port, Uint8List data) async {
+    final socket =
+        await Socket.connect(ip, port, timeout: const Duration(seconds: 5));
     socket.add(data);
     await socket.flush();
     await socket.close();
+  }
+
+  // Linux: CUPS queue name (no leading '/') → lp -d queue -o raw file
+  //        device path (/dev/usb/lp*) → write bytes directly
+  static Future<void> _sendLinuxUsb(String path, Uint8List data) async {
+    if (!path.startsWith('/')) {
+      await _sendCups(path, data);
+      return;
+    }
+    try {
+      final sink = File(path).openWrite(mode: FileMode.writeOnlyAppend);
+      sink.add(data);
+      await sink.flush();
+      await sink.close();
+    } on FileSystemException catch (e) {
+      if (e.osError?.errorCode == 13) {
+        throw Exception(
+          'Permission denied on $path\n'
+          'Fix: sudo usermod -aG lp \$USER  (then log out and back in)\n'
+          'Or register the printer in CUPS and it will be used automatically.',
+        );
+      }
+      rethrow;
+    }
+  }
+
+  // Sends raw bytes via CUPS using `lp -d queueName -o raw tempFile`.
+  static Future<void> _sendCups(String queueName, Uint8List data) async {
+    final tempPath =
+        '${Directory.systemTemp.path}/pl_${DateTime.now().millisecondsSinceEpoch}.bin';
+    await File(tempPath).writeAsBytes(data);
+    try {
+      final result = await Process.run(
+          'lp', ['-d', queueName, '-o', 'raw', tempPath]);
+      if (result.exitCode != 0) {
+        throw Exception('lp failed (${result.exitCode}): ${result.stderr}');
+      }
+    } finally {
+      try {
+        await File(tempPath).delete();
+      } catch (_) {}
+    }
+  }
+
+  // Windows: copy a temp binary file to the USB printer port (e.g. USB001)
+  static Future<void> _sendWindowsUsb(
+      String portName, Uint8List data) async {
+    final tempPath =
+        '${Directory.systemTemp.path}\\pl_${DateTime.now().millisecondsSinceEpoch}.bin';
+    await File(tempPath).writeAsBytes(data);
+    try {
+      await Process.run('cmd', ['/c', 'copy', '/b', tempPath, portName]);
+    } finally {
+      try {
+        await File(tempPath).delete();
+      } catch (_) {}
+    }
   }
 }
 
