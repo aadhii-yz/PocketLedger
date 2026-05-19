@@ -141,7 +141,7 @@ Flutter app that serves a dual purpose: (1) it **embeds the SvelteKit PWA in a W
 - **App tab** (`lib/screens/web_screen.dart`) — `webview_flutter` WebView loading the configured PocketLedger URL. Flutter injects `window.FlutterPrint` JS channel into the page; `print.ts` calls `window.FlutterPrint.postMessage(JSON.stringify({type, ...data}))` which triggers `_onPrint()` in Dart → TCP print directly. No HTTP round-trip needed.
 - **Settings tab** (`lib/screens/home_screen.dart`) — PocketLedger URL, barcode printer IP/port, receipt printer IP/port. Saving reloads the WebView with the new URL.
 
-**Printer support:**
+**Printer support** (see [`docs/printers.md`](docs/printers.md) for full hardware specs, connectivity options, and USB test commands):
 - `lib/services/tspl_printer.dart` — TSPL commands for **TVS LP 46 dlite** (barcode labels, 50 mm × 30 mm, 203 DPI). Sends over TCP to the printer's WiFi IP:9100.
 - `lib/services/escpos_printer.dart` — ESC/POS bytes for **TVS RP 3230** (80 mm thermal receipt). Same TCP approach.
 
