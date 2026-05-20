@@ -105,9 +105,13 @@ jobs:
 
       - name: Install Linux build dependencies
         run: |
+          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key \
+            | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc
+          echo "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-18 main" \
+            | sudo tee /etc/apt/sources.list.d/llvm.list
           sudo apt-get update -y
           sudo apt-get install -y \
-            clang cmake ninja-build \
+            clang-18 cmake ninja-build \
             libgtk-3-dev libepoxy-dev \
             libwpe-1.0-dev libwpewebkit-1.0-dev libwpebackend-fdo-1.0-dev \
             libsecret-1-dev libwayland-dev
@@ -124,6 +128,9 @@ jobs:
 
       - name: Build release Linux binary
         working-directory: companion_app
+        env:
+          CC: clang-18
+          CXX: clang++-18
         run: |
           flutter pub get
           flutter build linux --release
