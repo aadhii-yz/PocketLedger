@@ -107,6 +107,7 @@ jobs:
             gtk3 libepoxy \
             wpewebkit libwpe wpebackend-fdo \
             libsecret wayland wayland-protocols
+          git config --global --add safe.directory '*'
 
       - uses: actions/checkout@v4
 
