@@ -477,7 +477,7 @@ class PrinterDiscovery extends ChangeNotifier {
         '-NoProfile',
         '-NonInteractive',
         '-Command',
-        r"Get-PnpDevice -PresentOnly | Where-Object { $_.Class -eq 'Printer' -or ($_.Class -eq 'USB' -and $_.FriendlyName -match 'print') } | Select-Object FriendlyName, Status | ForEach-Object { ""$($_.FriendlyName)|$($_.Status)"" }",
+        r"Get-PnpDevice -PresentOnly | Where-Object { $_.Class -eq 'Printer' } | ForEach-Object { $_.FriendlyName + '|' + $_.Status }",
       ]);
       final out = (result.stdout as String).trim();
       _log('Win PnP devices: ${out.isEmpty ? '<none visible to Get-PnpDevice>' : out}');
