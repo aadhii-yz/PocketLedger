@@ -9,6 +9,7 @@ import '../services/printer_connection.dart';
 import '../services/printer_discovery.dart';
 import '../services/escpos_printer.dart';
 import '../services/tspl_printer.dart';
+import 'wifi_config_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   final VoidCallback? onSaved;
@@ -273,8 +274,14 @@ class _HomeScreenState extends State<HomeScreen> {
               onScanNow: () => PrinterDiscovery.instance.scanBarcodeNow(),
               onAssign: (ip) =>
                   PrinterDiscovery.instance.assignBarcodeIp(ip),
-              onTestPrint: d.barcodeState.status == DiscoveryStatus.found
+              onTestPrint: (d.barcodeState.status == DiscoveryStatus.found ||
+                            d.barcodeState.status == DiscoveryStatus.softAp)
                   ? _testBarcode
+                  : null,
+              onConfigureWifi: (d.barcodeState.status == DiscoveryStatus.softAp ||
+                                d.barcodeState.status == DiscoveryStatus.failed)
+                  ? () => Navigator.push(context,
+                        MaterialPageRoute(builder: (_) => const WifiConfigScreen()))
                   : null,
               manualIpCtrl: _barcodeManualIpCtrl,
               onSaveManual: _setBarcodeManual,
@@ -397,6 +404,7 @@ class _PrinterCard extends StatelessWidget {
   final VoidCallback onScanNow;
   final void Function(String ip) onAssign;
   final VoidCallback? onTestPrint;
+  final VoidCallback? onConfigureWifi;
   final TextEditingController manualIpCtrl;
   final VoidCallback onSaveManual;
   final bool usbNote;
@@ -410,6 +418,7 @@ class _PrinterCard extends StatelessWidget {
     required this.onTestPrint,
     required this.manualIpCtrl,
     required this.onSaveManual,
+    this.onConfigureWifi,
     this.usbNote = false,
   });
 
@@ -529,6 +538,14 @@ class _PrinterCard extends StatelessWidget {
                     label: const Text('Test'),
                   ),
                 ],
+                if (onConfigureWifi != null) ...[
+                  const SizedBox(width: 8),
+                  FilledButton.icon(
+                    onPressed: onConfigureWifi,
+                    icon: const Icon(Icons.wifi_find, size: 16),
+                    label: const Text('Configure WiFi'),
+                  ),
+                ],
               ],
             ),
             const SizedBox(height: 4),
@@ -584,6 +601,10 @@ class _PrinterCard extends StatelessWidget {
         color = Colors.green;
         icon = Icons.check_circle;
         label = state.connection.toString();
+      case DiscoveryStatus.softAp:
+        color = Colors.blue;
+        icon = Icons.wifi_lock;
+        label = 'SoftAP mode (192.168.4.1) — tap Configure WiFi to join your network';
       case DiscoveryStatus.searching:
         color = Colors.amber.shade700;
         icon = Icons.search;

@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'printer_connection.dart';
 import 'settings_service.dart';
 
-enum DiscoveryStatus { searching, found, noPermission, needsSelection, failed }
+enum DiscoveryStatus { searching, found, softAp, noPermission, needsSelection, failed }
 
 class PrinterState {
   final DiscoveryStatus status;
@@ -20,6 +20,8 @@ class PrinterState {
   const PrinterState.noPermission(List<String> paths)
       : this(DiscoveryStatus.noPermission, candidates: paths);
   const PrinterState.failed() : this(DiscoveryStatus.failed);
+  const PrinterState.softAp(PrinterConnection c)
+      : this(DiscoveryStatus.softAp, connection: c);
 }
 
 typedef _CupsQueues = ({String? receipt, String? label});
@@ -332,7 +334,9 @@ class PrinterDiscovery extends ChangeNotifier {
     _log('Barcode net scan: found IPs=$ips');
     if (ips.contains('192.168.4.1')) {
       _log('Barcode → SoftAP 192.168.4.1');
-      _setBarcodeFound(const TcpConnection('192.168.4.1', 9100));
+      _cancelBarcodeRetry();
+      _persistBarcode(const TcpConnection('192.168.4.1', 9100));
+      _setBarcodeState(PrinterState.softAp(const TcpConnection('192.168.4.1', 9100)));
       return;
     }
     final receiptIp = switch (receiptState.connection) {
