@@ -125,13 +125,17 @@ class PrinterDiscovery extends ChangeNotifier {
 
   void _restoreFromSettings() {
     final s = SettingsService.instance;
-    if (s.receiptUsbPath.isNotEmpty) {
+    // On Linux, USB paths need physical verification via sysfs — skip restoring
+    // them here and let detection confirm connectivity fresh. TCP connections are
+    // safe to restore since they don't rely on device nodes.
+    final restoreUsb = !Platform.isLinux;
+    if (restoreUsb && s.receiptUsbPath.isNotEmpty) {
       receiptState = PrinterState.found(UsbConnection(s.receiptUsbPath));
     } else if (s.receiptPrinterIp.isNotEmpty) {
       receiptState = PrinterState.found(
           TcpConnection(s.receiptPrinterIp, s.receiptPrinterPort));
     }
-    if (s.barcodeUsbPath.isNotEmpty) {
+    if (restoreUsb && s.barcodeUsbPath.isNotEmpty) {
       barcodeState = PrinterState.found(UsbConnection(s.barcodeUsbPath));
     } else if (s.barcodePrinterIp.isNotEmpty) {
       barcodeState = PrinterState.found(
@@ -146,6 +150,18 @@ class PrinterDiscovery extends ChangeNotifier {
 
     _setReceiptState(const PrinterState.searching());
     _setBarcodeState(const PrinterState.searching());
+
+    // On Linux, clear any previously persisted USB paths before probing.
+    // They'll be re-persisted only if the physical device is found again,
+    // preventing stale paths from surviving disconnects across sessions.
+    if (Platform.isLinux) {
+      final s = SettingsService.instance;
+      if (s.receiptUsbPath.isNotEmpty || s.barcodeUsbPath.isNotEmpty) {
+        s.receiptUsbPath = '';
+        s.barcodeUsbPath = '';
+        s.save();
+      }
+    }
 
     _log('Detection started (${Platform.operatingSystem})');
 
@@ -435,8 +451,19 @@ class PrinterDiscovery extends ChangeNotifier {
 
   // ── CUPS detection (Linux) ─────────────────────────────────────────────────
 
+  // Returns true if at least one USB printer is physically present via sysfs.
+  // CUPS queues persist even after the printer is disconnected, so we use sysfs
+  // as the authoritative signal for physical device presence.
+  Future<bool> _anyLinuxUsbPrinterPresent() async {
+    for (var i = 0; i <= 3; i++) {
+      if (await Directory('/sys/class/usbmisc/lp$i').exists()) return true;
+    }
+    return false;
+  }
+
   // Parses `lpstat -v` to find queues for the receipt (RP 3230) and label (LP 46).
   // Matches on both queue name and USB device URI, case-insensitive.
+  // Skips all USB queues if no USB printer device is physically present in sysfs.
   Future<_CupsQueues> _detectLinuxCupsQueues() async {
     try {
       final result = await Process.run('lpstat', ['-v']);
@@ -450,6 +477,13 @@ class PrinterDiscovery extends ChangeNotifier {
         final name = m.group(1)!;
         final uri = m.group(2)!.toLowerCase();
         final combined = '${name.toLowerCase()} $uri';
+
+        // For USB-backed queues, require a physically present USB device.
+        // CUPS keeps queues configured regardless of physical connectivity.
+        if (uri.startsWith('usb://') && !await _anyLinuxUsbPrinterPresent()) {
+          _log('CUPS: skipping "$name" — USB queue but no device in sysfs');
+          continue;
+        }
 
         if (receipt == null &&
             (combined.contains('rp3230') ||
@@ -560,6 +594,12 @@ class PrinterDiscovery extends ChangeNotifier {
     for (var i = 0; i <= 3; i++) {
       final path = '/dev/usb/lp$i';
       if (!await File(path).exists()) continue;
+      // The device node can exist without a printer connected on some Linux
+      // setups. sysfs only has an entry when a USB device is physically present.
+      if (!await Directory('/sys/class/usbmisc/lp$i').exists()) {
+        _log('USB lp$i: node exists but no sysfs entry — skipping (no device connected)');
+        continue;
+      }
       try {
         // Attempt open for writing to confirm we have permission.
         // Character devices ignore O_TRUNC so FileMode.writeOnly is safe.
