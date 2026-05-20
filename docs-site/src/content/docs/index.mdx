@@ -1,0 +1,58 @@
+---
+title: PocketLedger
+description: Multi-location inventory and billing for retail businesses.
+template: splash
+hero:
+  tagline: Inventory management and point-of-sale for multi-location retail — cloud-hosted backend, works offline, prints receipts and labels wirelessly.
+  actions:
+    - text: Get Started
+      link: /PocketLedger/getting-started/
+      icon: right-arrow
+      variant: primary
+    - text: View on GitHub
+      link: https://github.com/aadhii-yz/PocketLedger
+      icon: github
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+## What's inside
+
+<CardGrid stagger>
+  <Card title="Point of Sale" icon="laptop">
+    Fast barcode-based billing with camera scanning, multiple payment methods, and instant thermal receipt printing.
+  </Card>
+  <Card title="Multi-location Inventory" icon="list-format">
+    Track stock across warehouses and shops. Low-stock alerts, stock movements audit log, and inter-location transfers.
+  </Card>
+  <Card title="Wireless Printing" icon="forward-slash">
+    Companion app bridges the cloud backend to your LAN printers. Supports USB and TCP/IP — auto-detected, no IP entry needed.
+  </Card>
+  <Card title="Offline-ready PWA" icon="puzzle">
+    Installable on Android, Windows, and Linux. Core reference data cached locally; checkout blocked when offline to prevent overselling.
+  </Card>
+  <Card title="Role-based Access" icon="approve-check-circle">
+    Four roles: Admin, Manager, Stock Entry, and POS (Billing). POS users are scoped to a single shop automatically.
+  </Card>
+  <Card title="AI-friendly Docs" icon="open-book">
+    Every page has an Ask AI box. Type your question, pick Claude/ChatGPT/Gemini/Perplexity, and get an answer with full documentation context.
+  </Card>
+</CardGrid>
+
+## Quick links
+
+<CardGrid>
+  <Card title="Linux setup" icon="linux">
+    [Install the companion app and register printers via CUPS →](/PocketLedger/installation/linux/)
+  </Card>
+  <Card title="Windows setup" icon="approve-check">
+    [Install printers via Windows Printers & scanners →](/PocketLedger/installation/windows/)
+  </Card>
+  <Card title="Android setup" icon="phone">
+    [Download the APK and configure WiFi printing →](/PocketLedger/installation/android/)
+  </Card>
+  <Card title="Troubleshooting" icon="warning">
+    [Printer not found? Connection issues? Start here →](/PocketLedger/troubleshooting/index/)
+  </Card>
+</CardGrid>

@@ -1,0 +1,8 @@
+---
+import type { Props } from '@astrojs/starlight/props';
+import Default from '@astrojs/starlight/components/Footer.astro';
+import AiPromptBox from './AiPromptBox.svelte';
+---
+
+<AiPromptBox client:load />
+<Default {...Astro.props}><slot /></Default>

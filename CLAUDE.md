@@ -143,7 +143,7 @@ Flutter app that serves a dual purpose: (1) it **embeds the SvelteKit PWA in a W
 
 **WiFi config wizard** (`lib/screens/wifi_config_screen.dart`) — guides the user through connecting the label printer to the office network. Steps: (1) instruct user to connect device to `DEFAULT_AP_CB8F29` (password `12345678`); (2) scan available networks via `GET http://192.168.4.1/scanap` → `{ state: 0, wifilist: [{ssid, mac}] }`; (3) SSID dropdown + password field; (4) `POST http://192.168.4.1/connap` with form-encoded body `ssid=X&pwd=Y&bssid=&autoconn=1` and `Content-Type: application/json` header (firmware quirk) → `{ state: 0 }` on success; (5) success screen instructs user to switch back to regular WiFi, "Done" triggers `scanBarcodeNow()`; (6) on POST failure, shows selectable fallback URL `http://192.168.4.1/pages/wifi/station.html` for manual browser config. Uses `dart:io HttpClient` only — no new packages.
 
-**Printer support** (see [`docs/printers.md`](docs/printers.md) for full hardware specs, [`docs/linux-setup.md`](docs/linux-setup.md) for Linux CUPS/USB setup, and [`docs/windows-setup.md`](docs/windows-setup.md) for Windows printer installation):
+**Printer support** (see [`docs-site/src/content/docs/printers/`](docs-site/src/content/docs/printers/) for full hardware specs and WiFi setup, [`docs-site/src/content/docs/installation/linux.md`](docs-site/src/content/docs/installation/linux.md) for Linux CUPS/USB setup, and [`docs-site/src/content/docs/installation/windows.md`](docs-site/src/content/docs/installation/windows.md) for Windows printer installation):
 - `lib/services/tspl_printer.dart` — TSPL commands for **TVS LP 46 dlite** (barcode labels, 50 mm × 30 mm, 203 DPI).
 - `lib/services/escpos_printer.dart` — ESC/POS bytes for **TVS RP 3230** (80 mm thermal receipt).
 - `lib/services/printer_connection.dart` — sealed `PrinterConnection` type: `UsbConnection(path)` or `TcpConnection(ip, port)`. Both printer services accept this and dispatch to the correct transport.
@@ -165,6 +165,24 @@ Printer IPs are stored in the companion app's own `SharedPreferences` (configure
 **Building:** Triggered manually via GitHub Actions (`.github/workflows/build-companion.yml`). The workflow runs `flutter create . --no-pub` to generate platform boilerplate, restores our `lib/` and `pubspec.yaml` via `git checkout`, runs `patch_manifest.py` to inject the foreground-service permissions into `AndroidManifest.xml`, then builds APK (ubuntu runner), Windows exe (windows runner), and Linux binary (ubuntu runner). Per-platform boolean inputs (`build_android`, `build_windows`, `build_linux`) let you build only the platform you need. `version` is optional — omit it to produce downloadable artifacts without creating a GitHub Release; provide it to publish a full release. The Windows job caches pub packages (`%LOCALAPPDATA%\Pub\Cache`, keyed on `pubspec.lock`) and the CMake build output (`companion_app/build/windows`, same key) to cut subsequent builds from ~10 min to ~3-4 min when only Dart code changes. The Linux binary is distributed as a `.tar.gz` of `build/linux/x64/release/bundle/`. Linux users need `wpewebkit` and `libwpe` installed (`sudo pacman -S wpewebkit libwpe` on Arch). The `linux/runner/main.cc` sets `LIBGL_ALWAYS_SOFTWARE=true` at startup to work around a WPE EGL texture compositing issue on Intel/i915 hardware.
 
 **First-time device setup:** Open companion app → Settings tab → enter PocketLedger URL → Save & Open App. Printer connections are detected automatically; no IP entry required. On Linux, register printers in CUPS first (see `docs/linux-setup.md`). On Windows, install each printer via Settings → Printers & scanners → Add device (Generic / Text Only driver, named `TVS RP 3230` and `TVS LP 46`). `window.flutter_inappwebview` is automatically available in the WebView; printing goes directly via the JS channel without any HTTP ping.
+
+### Docs Site (`docs-site/`)
+
+Starlight (Astro) documentation site deployed to GitHub Pages at `https://aadhii-yz.github.io/PocketLedger/`. Built with `npm run build` from `docs-site/`; deployed via `.github/workflows/docs.yml` on push to `master` when `docs-site/**` changes.
+
+**Key files:**
+- `astro.config.mjs` — site config: `base: '/PocketLedger'`, sidebar structure, Starlight Footer override that injects the AI prompt box on every page.
+- `src/components/AiPromptBox.svelte` — interactive AI assistant widget. Textarea + platform selector (Claude / ChatGPT / Gemini / Perplexity). On submit, prepends a context prefix pointing to `llms-full.txt` and redirects to the chosen platform via `?q=` query param.
+- `src/components/AiFooter.astro` — Starlight `Footer` component override; wraps `AiPromptBox` with `client:load` and renders above the default footer.
+- `src/pages/llms.txt.ts` — generates `/llms.txt` at build time (standard llms.txt index format listing all pages with URLs).
+- `src/pages/llms-full.txt.ts` — generates `/llms-full.txt` at build time by concatenating all docs pages via `import.meta.glob` with `query: '?raw'`; frontmatter stripped. Used as the AI context document.
+- `src/content/docs/` — 17 Markdown/MDX content pages: landing (`index.mdx`), getting-started, installation (companion-app, linux, windows, android), user-guide (billing, stock, transfers, manager, admin, print-settings), printers (index, wifi-setup), troubleshooting (index, printing, connection).
+
+**Build command (from `docs-site/`):**
+```bash
+npm run build   # outputs to docs-site/dist/
+npm run dev     # dev server at localhost:4321/PocketLedger
+```
 
 ### Data model summary
 
