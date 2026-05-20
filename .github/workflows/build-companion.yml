@@ -77,6 +77,13 @@ jobs:
           channel: stable
           cache: true
 
+      - name: Cache pub packages
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\Pub\Cache
+          key: pub-windows-${{ hashFiles('companion_app/pubspec.lock') }}
+          restore-keys: pub-windows-
+
       - name: Generate platform boilerplate
         working-directory: companion_app
         shell: bash
@@ -87,6 +94,13 @@ jobs:
             --platforms windows \
             --no-pub
           git checkout -- lib/ pubspec.yaml
+
+      - name: Cache Windows build output
+        uses: actions/cache@v4
+        with:
+          path: companion_app/build/windows
+          key: build-windows-${{ hashFiles('companion_app/pubspec.lock') }}
+          restore-keys: build-windows-
 
       - name: Build release Windows exe
         working-directory: companion_app
