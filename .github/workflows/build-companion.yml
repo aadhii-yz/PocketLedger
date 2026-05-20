@@ -102,7 +102,7 @@ jobs:
         run: |
           pacman -Syu --noconfirm
           pacman -S --noconfirm \
-            git curl unzip tar which \
+            git curl unzip tar which jq \
             base-devel clang cmake ninja pkg-config \
             gtk3 libepoxy \
             wpewebkit libwpe wpebackend-fdo \
