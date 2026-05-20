@@ -128,10 +128,12 @@ class PrinterDiscovery extends ChangeNotifier {
     _setBarcodeState(const PrinterState.searching());
 
     try {
-      // ── Step 1: CUPS queues (Linux only, fast ~50ms) ──────────────────────
+      // ── Step 1: CUPS queues (Linux) / named USB printers (Windows) ──────
       _CupsQueues cups = (receipt: null, label: null);
       if (Platform.isLinux) {
         cups = await _detectLinuxCupsQueues();
+      } else if (Platform.isWindows) {
+        cups = await _detectWindowsPrinters();
       }
 
       // ── Step 2: Direct USB probe (Linux/Windows, fast ~50ms) ─────────────
@@ -196,6 +198,12 @@ class PrinterDiscovery extends ChangeNotifier {
           _setReceiptFound(UsbConnection(cups.receipt!));
           return;
         }
+      } else if (Platform.isWindows) {
+        final named = await _detectWindowsPrinters();
+        if (named.receipt != null) {
+          _setReceiptFound(UsbConnection(named.receipt!));
+          return;
+        }
       }
       if (!Platform.isAndroid && !Platform.isMacOS) {
         final usb = await _probeAllUsb();
@@ -230,6 +238,12 @@ class PrinterDiscovery extends ChangeNotifier {
         final cups = await _detectLinuxCupsQueues();
         if (cups.label != null) {
           _setBarcodeFound(UsbConnection(cups.label!));
+          return;
+        }
+      } else if (Platform.isWindows) {
+        final named = await _detectWindowsPrinters();
+        if (named.label != null) {
+          _setBarcodeFound(UsbConnection(named.label!));
           return;
         }
       }
@@ -403,6 +417,52 @@ class PrinterDiscovery extends ChangeNotifier {
                 combined.contains('lp_46') ||
                 combined.contains('dlite'))) {
           label = name;
+        }
+      }
+      return (receipt: receipt, label: label);
+    } catch (_) {
+      return (receipt: null, label: null);
+    }
+  }
+
+  // Queries Win32_Printer for USB-connected printers and matches by name to
+  // identify the receipt (RP 3230) and label (LP 46 dlite) ports.
+  // Uses Get-CimInstance with a Get-WmiObject fallback for PS 5 compatibility.
+  Future<_CupsQueues> _detectWindowsPrinters() async {
+    try {
+      final result = await Process.run('powershell', [
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        r'$p = try { Get-CimInstance Win32_Printer } catch { Get-WmiObject Win32_Printer };'
+        r' $p | Where-Object { $_.PortName -match "^USB" } |'
+        r' ForEach-Object { "$($_.Name)|$($_.PortName)" }',
+      ]);
+      if (result.exitCode != 0) return (receipt: null, label: null);
+
+      String? receipt;
+      String? label;
+      for (final raw in (result.stdout as String).split('\n')) {
+        final line = raw.trim();
+        final sep = line.indexOf('|');
+        if (sep < 0) continue;
+        final name = line.substring(0, sep).toLowerCase();
+        final port = line.substring(sep + 1).trim();
+        if (port.isEmpty) continue;
+
+        if (receipt == null &&
+            (name.contains('3230') ||
+                name.contains('rp3230') ||
+                name.contains('rp-3230') ||
+                name.contains('rp 3230'))) {
+          receipt = port;
+        }
+        if (label == null &&
+            (name.contains('lp46') ||
+                name.contains('lp-46') ||
+                name.contains('lp 46') ||
+                name.contains('dlite'))) {
+          label = port;
         }
       }
       return (receipt: receipt, label: label);
