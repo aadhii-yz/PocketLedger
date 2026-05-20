@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 import 'printer_connection.dart';
+import 'printer_discovery.dart';
 
 // ESC/POS for TVS RP 3230 (80mm, 42-char line width)
 class EscPosPrinter {
@@ -255,9 +256,11 @@ class EscPosPrinter {
   // printerName is the installed printer display name (e.g. 'TVS RP 3230').
   static Future<void> _sendWindowsUsb(
       String printerName, Uint8List data) async {
+    final log = PrinterDiscovery.instance.addLog;
     final ts = DateTime.now().millisecondsSinceEpoch;
     final tmpBin = '${Directory.systemTemp.path}\\pl_$ts.bin';
     final tmpPs = '${Directory.systemTemp.path}\\pl_$ts.ps1';
+    log('Win print: "$printerName" ${data.length} B → $tmpBin');
     await File(tmpBin).writeAsBytes(data);
     final safeName = printerName.replaceAll("'", "''");
     final safeBin = tmpBin.replaceAll("'", "''");
@@ -267,10 +270,14 @@ class EscPosPrinter {
         '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
         '-File', tmpPs,
       ]);
+      final out = (r.stdout as String).trim();
+      final err = (r.stderr as String).trim();
+      log('Win print: PS exit=${r.exitCode}'
+          '${out.isNotEmpty ? ' stdout="$out"' : ''}'
+          '${err.isNotEmpty ? ' stderr="$err"' : ''}');
       if (r.exitCode != 0) {
-        throw Exception(
-            'Windows print failed (exit ${r.exitCode}): '
-            '${(r.stderr as String).trim()}');
+        throw Exception('Windows print failed (exit ${r.exitCode})'
+            '${err.isNotEmpty ? ': $err' : ''}');
       }
     } finally {
       for (final p in [tmpBin, tmpPs]) {

@@ -66,6 +66,8 @@ class PrinterDiscovery extends ChangeNotifier {
     _runInitialDetection();
   }
 
+  void addLog(String msg) => _log(msg);
+
   void stopDiscovery() {
     _receiptRetryTimer?.cancel();
     _barcodeRetryTimer?.cancel();

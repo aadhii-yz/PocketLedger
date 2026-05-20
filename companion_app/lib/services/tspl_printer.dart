@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'printer_connection.dart';
+import 'printer_discovery.dart';
 
 // TSPL commands for TVS LP 46 dlite (203 DPI, 1mm = 8 dots)
 // Default label: 50mm x 30mm with 2mm gap
@@ -161,9 +162,11 @@ class TsplPrinter {
   // Windows: send TSPL bytes via the Win32 spooler API (OpenPrinter/WritePrinter).
   // printerName is the installed printer display name (e.g. 'TVS LP 46 DLITE').
   static Future<void> _sendWindowsUsb(String printerName, String tspl) async {
+    final log = PrinterDiscovery.instance.addLog;
     final ts = DateTime.now().millisecondsSinceEpoch;
     final tmpBin = '${Directory.systemTemp.path}\\pl_$ts.bin';
     final tmpPs = '${Directory.systemTemp.path}\\pl_$ts.ps1';
+    log('Win print: "$printerName" ${tspl.length} chars → $tmpBin');
     await File(tmpBin).writeAsString(tspl);
     final safeName = printerName.replaceAll("'", "''");
     final safeBin = tmpBin.replaceAll("'", "''");
@@ -173,10 +176,14 @@ class TsplPrinter {
         '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
         '-File', tmpPs,
       ]);
+      final out = (r.stdout as String).trim();
+      final err = (r.stderr as String).trim();
+      log('Win print: PS exit=${r.exitCode}'
+          '${out.isNotEmpty ? ' stdout="$out"' : ''}'
+          '${err.isNotEmpty ? ' stderr="$err"' : ''}');
       if (r.exitCode != 0) {
-        throw Exception(
-            'Windows print failed (exit ${r.exitCode}): '
-            '${(r.stderr as String).trim()}');
+        throw Exception('Windows print failed (exit ${r.exitCode})'
+            '${err.isNotEmpty ? ': $err' : ''}');
       }
     } finally {
       for (final p in [tmpBin, tmpPs]) {

@@ -148,14 +148,18 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _testReceipt() async {
     final conn = SettingsService.instance.receiptConnection;
+    final d = PrinterDiscovery.instance;
+    d.addLog('Test receipt: conn=${conn ?? '<null>'}');
     if (conn == null) return;
     try {
       await EscPosPrinter.testPrint(connection: conn);
+      d.addLog('Test receipt: OK');
       if (mounted) {
         ScaffoldMessenger.of(context)
             .showSnackBar(const SnackBar(content: Text('Test receipt sent')));
       }
     } catch (e) {
+      d.addLog('Test receipt: FAIL $e');
       if (mounted) {
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text('Test failed: $e')));
@@ -165,14 +169,18 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _testBarcode() async {
     final conn = SettingsService.instance.barcodeConnection;
+    final d = PrinterDiscovery.instance;
+    d.addLog('Test barcode: conn=${conn ?? '<null>'}');
     if (conn == null) return;
     try {
       await TsplPrinter.testPrint(connection: conn);
+      d.addLog('Test barcode: OK');
       if (mounted) {
         ScaffoldMessenger.of(context)
             .showSnackBar(const SnackBar(content: Text('Test label sent')));
       }
     } catch (e) {
+      d.addLog('Test barcode: FAIL $e');
       if (mounted) {
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text('Test failed: $e')));
