@@ -506,7 +506,8 @@ class PrinterDiscovery extends ChangeNotifier {
         final line = raw.trim();
         final sep = line.indexOf('|');
         if (sep < 0) continue;
-        final name = line.substring(0, sep).toLowerCase();
+        final originalName = line.substring(0, sep).trim();
+        final name = originalName.toLowerCase();
         final port = line.substring(sep + 1).trim();
         if (port.isEmpty) continue;
         _log('Win printer: name="$name" port="$port"');
@@ -516,16 +517,16 @@ class PrinterDiscovery extends ChangeNotifier {
                 name.contains('rp3230') ||
                 name.contains('rp-3230') ||
                 name.contains('rp 3230'))) {
-          receipt = port;
-          _log('Win: matched receipt → $port');
+          receipt = originalName;
+          _log('Win: matched receipt → $originalName (port $port)');
         }
         if (label == null &&
             (name.contains('lp46') ||
                 name.contains('lp-46') ||
                 name.contains('lp 46') ||
                 name.contains('dlite'))) {
-          label = port;
-          _log('Win: matched label → $port');
+          label = originalName;
+          _log('Win: matched label → $originalName (port $port)');
         }
       }
       if (receipt == null && label == null) {

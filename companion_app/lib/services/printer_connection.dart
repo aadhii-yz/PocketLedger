@@ -3,7 +3,7 @@ sealed class PrinterConnection {
 }
 
 final class UsbConnection extends PrinterConnection {
-  final String path; // '/dev/usb/lp0' on Linux, 'USB001' on Windows
+  final String path; // '/dev/usb/lp0' or CUPS queue on Linux, printer name (e.g. 'TVS RP 3230') on Windows
   const UsbConnection(this.path);
 
   @override

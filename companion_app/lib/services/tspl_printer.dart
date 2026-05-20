@@ -158,16 +158,69 @@ class TsplPrinter {
     }
   }
 
-  static Future<void> _sendWindowsUsb(String portName, String tspl) async {
-    final tempPath =
-        '${Directory.systemTemp.path}\\pl_${DateTime.now().millisecondsSinceEpoch}.tspl';
-    await File(tempPath).writeAsString(tspl);
+  // Windows: send TSPL bytes via the Win32 spooler API (OpenPrinter/WritePrinter).
+  // printerName is the installed printer display name (e.g. 'TVS LP 46 DLITE').
+  static Future<void> _sendWindowsUsb(String printerName, String tspl) async {
+    final ts = DateTime.now().millisecondsSinceEpoch;
+    final tmpBin = '${Directory.systemTemp.path}\\pl_$ts.bin';
+    final tmpPs = '${Directory.systemTemp.path}\\pl_$ts.ps1';
+    await File(tmpBin).writeAsString(tspl);
+    final safeName = printerName.replaceAll("'", "''");
+    final safeBin = tmpBin.replaceAll("'", "''");
+    await File(tmpPs).writeAsString(_winSpoolerScript(safeName, safeBin));
     try {
-      await Process.run('cmd', ['/c', 'copy', '/b', tempPath, portName]);
+      final r = await Process.run('powershell', [
+        '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+        '-File', tmpPs,
+      ]);
+      if (r.exitCode != 0) {
+        throw Exception(
+            'Windows print failed (exit ${r.exitCode}): '
+            '${(r.stderr as String).trim()}');
+      }
     } finally {
-      try {
-        await File(tempPath).delete();
-      } catch (_) {}
+      for (final p in [tmpBin, tmpPs]) {
+        try {
+          await File(p).delete();
+        } catch (_) {}
+      }
     }
   }
+
+  static String _winSpoolerScript(String printerName, String binPath) => '''
+Add-Type -TypeDefinition @'
+using System; using System.Runtime.InteropServices;
+public class PL {
+  [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
+  public class DI {
+    [MarshalAs(UnmanagedType.LPStr)] public string n;
+    [MarshalAs(UnmanagedType.LPStr)] public string o;
+    [MarshalAs(UnmanagedType.LPStr)] public string t;
+  }
+  [DllImport("winspool.drv", EntryPoint = "OpenPrinterA", CharSet = CharSet.Ansi)]
+  public static extern bool Open(string name, out IntPtr h, IntPtr d);
+  [DllImport("winspool.drv", EntryPoint = "ClosePrinter")]
+  public static extern bool Close(IntPtr h);
+  [DllImport("winspool.drv", EntryPoint = "StartDocPrinterA", CharSet = CharSet.Ansi)]
+  public static extern bool StartDoc(IntPtr h, int l, [In, MarshalAs(UnmanagedType.LPStruct)] DI di);
+  [DllImport("winspool.drv", EntryPoint = "EndDocPrinter")]
+  public static extern bool EndDoc(IntPtr h);
+  [DllImport("winspool.drv", EntryPoint = "StartPagePrinter")]
+  public static extern bool StartPage(IntPtr h);
+  [DllImport("winspool.drv", EntryPoint = "EndPagePrinter")]
+  public static extern bool EndPage(IntPtr h);
+  [DllImport("winspool.drv", EntryPoint = "WritePrinter")]
+  public static extern bool Write(IntPtr h, byte[] b, int n, out int w);
+}
+'@
+\$ErrorActionPreference = 'Stop'
+\$b = [IO.File]::ReadAllBytes('$binPath')
+\$h = [IntPtr]::Zero
+if (-not [PL]::Open('$printerName', [ref]\$h, [IntPtr]::Zero)) { throw "OpenPrinter('$printerName') failed" }
+\$d = New-Object PL+DI; \$d.n = 'PL'; \$d.t = 'RAW'
+[PL]::StartDoc(\$h, 1, \$d) | Out-Null
+[PL]::StartPage(\$h) | Out-Null
+\$w = 0; [PL]::Write(\$h, \$b, \$b.Length, [ref]\$w) | Out-Null
+[PL]::EndPage(\$h) | Out-Null; [PL]::EndDoc(\$h) | Out-Null; [PL]::Close(\$h) | Out-Null
+''';
 }

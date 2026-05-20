@@ -47,13 +47,13 @@ After the printers are installed:
 1. Extract `pocketledger-companion-windows.zip`
 2. Run `pocketledger_print.exe`
 3. Go to the **Settings tab**
-4. Both printers should show as **USB @ USB001** / **USB @ USB002** (or the port names you assigned)
+4. Both printers should show as **USB @ TVS RP 3230** / **USB @ TVS LP 46 DLITE** (the printer display name, not the port)
 
 If detection still fails, expand **Debug Logs** at the bottom of the Settings tab. Look for:
 
 - `Win PS stdout="<empty>"` → printer not registered in Windows (repeat Step 1)
 - `Win printer: name="..." port="..."` → printer found but name doesn't match — the name shown in the log must contain `3230` / `rp3230` (receipt) or `lp46` / `dlite` (label). Rename the printer in Windows to match.
-- `Win: matched receipt → USB001` → detected correctly
+- `Win: matched receipt → TVS RP 3230 (port USB001)` → detected correctly
 
 ---
 
@@ -86,7 +86,7 @@ Printer connections are persisted across restarts; the app restores the last kno
 
 **Printer detected but nothing prints**
 
-The `copy /b` command used internally requires the USB port to be writable. Try printing a test page from Windows first to confirm the port is working. If the test page also fails, the port assignment may be wrong — try `USB002` instead of `USB001` in the printer properties.
+The app sends raw bytes via the Windows spooler API (`OpenPrinter`/`WritePrinter`). If detection shows the printer name correctly but test print fails, check that the printer is not paused (right-click the printer in Settings → Resume). If the error appears in Debug Logs (e.g. `OpenPrinter('TVS RP 3230') failed`), the printer name in the log must exactly match the installed name — rename it in Windows if needed.
 
 **Both printers assigned to the same printer type**
 
