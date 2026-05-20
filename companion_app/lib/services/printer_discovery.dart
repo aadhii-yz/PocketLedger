@@ -37,11 +37,27 @@ class PrinterDiscovery extends ChangeNotifier {
   DateTime? receiptNextRetry;
   DateTime? barcodeNextRetry;
 
+  final List<String> logs = [];
+
   Timer? _receiptRetryTimer;
   Timer? _barcodeRetryTimer;
   bool _initialBusy = false;
   bool _receiptBusy = false;
   bool _barcodeBusy = false;
+
+  void _log(String msg) {
+    final now = DateTime.now();
+    final ts =
+        '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
+    logs.add('[$ts] $msg');
+    if (logs.length > 200) logs.removeAt(0);
+    notifyListeners();
+  }
+
+  void clearLogs() {
+    logs.clear();
+    notifyListeners();
+  }
 
   // ── Public API ─────────────────────────────────────────────────────────────
 
@@ -127,30 +143,39 @@ class PrinterDiscovery extends ChangeNotifier {
     _setReceiptState(const PrinterState.searching());
     _setBarcodeState(const PrinterState.searching());
 
+    _log('Detection started (${Platform.operatingSystem})');
+
     try {
       // ── Step 1: CUPS queues (Linux) / named USB printers (Windows) ──────
       _CupsQueues cups = (receipt: null, label: null);
       if (Platform.isLinux) {
         cups = await _detectLinuxCupsQueues();
+        _log('CUPS: receipt=${cups.receipt ?? 'none'} label=${cups.label ?? 'none'}');
       } else if (Platform.isWindows) {
         cups = await _detectWindowsPrinters();
+        _log('Win named: receipt=${cups.receipt ?? 'none'} label=${cups.label ?? 'none'}');
       }
 
       // ── Step 2: Direct USB probe (Linux/Windows, fast ~50ms) ─────────────
       _UsbProbe usb = (usable: [], noPermission: []);
       if (!Platform.isAndroid && !Platform.isMacOS) {
         usb = await _probeAllUsb();
+        _log('USB probe: usable=${usb.usable} noPerm=${usb.noPermission}');
       }
 
       // ── Step 3: Assign receipt ────────────────────────────────────────────
       if (cups.receipt != null) {
+        _log('Receipt → named USB ${cups.receipt}');
         _setReceiptFound(UsbConnection(cups.receipt!));
       } else if (usb.usable.isNotEmpty) {
+        _log('Receipt → generic USB ${usb.usable.first}');
         _setReceiptFound(UsbConnection(usb.usable.first));
       } else if (usb.noPermission.isNotEmpty) {
+        _log('Receipt → USB found but no permission: ${usb.noPermission}');
         _setReceiptState(PrinterState.noPermission(usb.noPermission));
+      } else {
+        _log('Receipt → no USB found, will network scan');
       }
-      // else: searching → network scan below
 
       // ── Step 4: Assign barcode (exclude receipt's claimed USB path) ───────
       final receiptUsb = switch (receiptState.connection) {
@@ -163,25 +188,32 @@ class PrinterDiscovery extends ChangeNotifier {
           usb.noPermission.where((p) => p != receiptUsb).toList();
 
       if (cups.label != null) {
+        _log('Barcode → named USB ${cups.label}');
         _setBarcodeFound(UsbConnection(cups.label!));
       } else if (remainingUsable.isNotEmpty) {
+        _log('Barcode → generic USB ${remainingUsable.first}');
         _setBarcodeFound(UsbConnection(remainingUsable.first));
       } else if (remainingNoPerm.isNotEmpty) {
+        _log('Barcode → USB found but no permission: $remainingNoPerm');
         _setBarcodeState(PrinterState.noPermission(remainingNoPerm));
+      } else {
+        _log('Barcode → no USB found, will network scan');
       }
-      // else: searching → network scan below
 
       // ── Step 5: Network scan for anything still searching ─────────────────
       final networkFutures = <Future>[];
       if (receiptState.status == DiscoveryStatus.searching) {
+        _log('Starting receipt network scan');
         networkFutures.add(_receiptNetworkScan());
       }
       if (barcodeState.status == DiscoveryStatus.searching) {
+        _log('Starting barcode network scan');
         networkFutures.add(_barcodeNetworkScan());
       }
       await Future.wait(networkFutures);
     } finally {
       _initialBusy = false;
+      _log('Detection done — receipt=${receiptState.status.name} barcode=${barcodeState.status.name}');
     }
   }
 
@@ -277,21 +309,27 @@ class PrinterDiscovery extends ChangeNotifier {
 
   Future<void> _receiptNetworkScan() async {
     final ips = await _scanPort9100();
+    _log('Receipt net scan: found IPs=$ips');
     final candidates =
         ips.where((ip) => !ip.startsWith('192.168.4.')).toList();
     if (candidates.length == 1) {
+      _log('Receipt → TCP ${candidates.first}');
       _setReceiptFound(TcpConnection(candidates.first, 9100));
     } else if (candidates.isEmpty) {
+      _log('Receipt net scan: no devices on port 9100');
       _setReceiptState(const PrinterState.failed());
       _scheduleReceiptRetry();
     } else {
+      _log('Receipt net scan: multiple candidates, needs selection');
       _setReceiptState(PrinterState.needsSelection(candidates));
     }
   }
 
   Future<void> _barcodeNetworkScan() async {
     final ips = await _scanPort9100();
+    _log('Barcode net scan: found IPs=$ips');
     if (ips.contains('192.168.4.1')) {
+      _log('Barcode → SoftAP 192.168.4.1');
       _setBarcodeFound(const TcpConnection('192.168.4.1', 9100));
       return;
     }
@@ -301,11 +339,14 @@ class PrinterDiscovery extends ChangeNotifier {
     };
     final candidates = ips.where((ip) => ip != receiptIp).toList();
     if (candidates.length == 1) {
+      _log('Barcode → TCP ${candidates.first}');
       _setBarcodeFound(TcpConnection(candidates.first, 9100));
     } else if (candidates.isEmpty) {
+      _log('Barcode net scan: no devices on port 9100');
       _setBarcodeState(const PrinterState.failed());
       _scheduleBarcodeRetry();
     } else {
+      _log('Barcode net scan: multiple candidates, needs selection');
       _setBarcodeState(PrinterState.needsSelection(candidates));
     }
   }
@@ -429,6 +470,7 @@ class PrinterDiscovery extends ChangeNotifier {
   // identify the receipt (RP 3230) and label (LP 46 dlite) ports.
   // Uses Get-CimInstance with a Get-WmiObject fallback for PS 5 compatibility.
   Future<_CupsQueues> _detectWindowsPrinters() async {
+    _log('Win: running Get-CimInstance Win32_Printer');
     try {
       final result = await Process.run('powershell', [
         '-NoProfile',
@@ -438,17 +480,21 @@ class PrinterDiscovery extends ChangeNotifier {
         r' $p | Where-Object { $_.PortName -match "^USB" } |'
         r' ForEach-Object { "$($_.Name)|$($_.PortName)" }',
       ]);
+      _log('Win PS exit=${result.exitCode} stderr="${(result.stderr as String).trim()}"');
+      final stdout = (result.stdout as String).trim();
+      _log('Win PS stdout="${stdout.isEmpty ? '<empty>' : stdout}"');
       if (result.exitCode != 0) return (receipt: null, label: null);
 
       String? receipt;
       String? label;
-      for (final raw in (result.stdout as String).split('\n')) {
+      for (final raw in stdout.split('\n')) {
         final line = raw.trim();
         final sep = line.indexOf('|');
         if (sep < 0) continue;
         final name = line.substring(0, sep).toLowerCase();
         final port = line.substring(sep + 1).trim();
         if (port.isEmpty) continue;
+        _log('Win printer: name="$name" port="$port"');
 
         if (receipt == null &&
             (name.contains('3230') ||
@@ -456,6 +502,7 @@ class PrinterDiscovery extends ChangeNotifier {
                 name.contains('rp-3230') ||
                 name.contains('rp 3230'))) {
           receipt = port;
+          _log('Win: matched receipt → $port');
         }
         if (label == null &&
             (name.contains('lp46') ||
@@ -463,10 +510,15 @@ class PrinterDiscovery extends ChangeNotifier {
                 name.contains('lp 46') ||
                 name.contains('dlite'))) {
           label = port;
+          _log('Win: matched label → $port');
         }
       }
+      if (receipt == null && label == null) {
+        _log('Win: no model name matched');
+      }
       return (receipt: receipt, label: label);
-    } catch (_) {
+    } catch (e) {
+      _log('Win: exception: $e');
       return (receipt: null, label: null);
     }
   }
@@ -500,6 +552,7 @@ class PrinterDiscovery extends ChangeNotifier {
   }
 
   Future<_UsbProbe> _probeWindowsUsb() async {
+    _log('Win USB probe: running Get-WmiObject Win32_Printer PortName');
     try {
       final result = await Process.run('powershell', [
         '-NoProfile',
@@ -507,15 +560,21 @@ class PrinterDiscovery extends ChangeNotifier {
         '-Command',
         r"Get-WmiObject -Class Win32_Printer | Where-Object { $_.PortName -match '^USB\d+' } | Select-Object -ExpandProperty PortName",
       ]);
+      _log('Win USB probe: exit=${result.exitCode} stderr="${(result.stderr as String).trim()}"');
+      final stdout = (result.stdout as String).trim();
+      _log('Win USB probe: stdout="${stdout.isEmpty ? '<empty>' : stdout}"');
       if (result.exitCode == 0) {
-        final ports = (result.stdout as String)
+        final ports = stdout
             .split('\n')
             .map((s) => s.trim())
             .where((s) => RegExp(r'^USB\d+$').hasMatch(s))
             .toList();
+        _log('Win USB probe: matched ports=$ports');
         return (usable: ports, noPermission: <String>[]);
       }
-    } catch (_) {}
+    } catch (e) {
+      _log('Win USB probe: exception: $e');
+    }
     return (usable: <String>[], noPermission: <String>[]);
   }
 

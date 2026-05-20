@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import '../services/settings_service.dart';
 import '../services/print_server.dart';
@@ -271,10 +272,110 @@ class _HomeScreenState extends State<HomeScreen> {
               onSaveManual: _setBarcodeManual,
             ),
 
+            const SizedBox(height: 24),
+
+            // Debug logs
+            _DebugLogPanel(logs: d.logs, onClear: d.clearLogs),
+
             const SizedBox(height: 32),
           ],
         ),
       ),
+    );
+  }
+}
+
+// ── Debug log panel ────────────────────────────────────────────────────────
+
+class _DebugLogPanel extends StatelessWidget {
+  final List<String> logs;
+  final VoidCallback onClear;
+
+  const _DebugLogPanel({required this.logs, required this.onClear});
+
+  @override
+  Widget build(BuildContext context) {
+    return ExpansionTile(
+      tilePadding: EdgeInsets.zero,
+      title: Row(
+        children: [
+          const Icon(Icons.bug_report_outlined, size: 16, color: Colors.grey),
+          const SizedBox(width: 6),
+          const Text('Debug Logs',
+              style: TextStyle(fontSize: 13, color: Colors.grey)),
+          const Spacer(),
+          if (logs.isNotEmpty)
+            Text('${logs.length} entries',
+                style: const TextStyle(fontSize: 11, color: Colors.grey)),
+        ],
+      ),
+      children: [
+        Container(
+          width: double.infinity,
+          constraints: const BoxConstraints(maxHeight: 300),
+          decoration: BoxDecoration(
+            color: Colors.grey.shade900,
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: logs.isEmpty
+              ? const Padding(
+                  padding: EdgeInsets.all(12),
+                  child: Text('No logs yet.',
+                      style: TextStyle(color: Colors.grey, fontSize: 12)),
+                )
+              : ListView.builder(
+                  reverse: true,
+                  padding: const EdgeInsets.all(8),
+                  itemCount: logs.length,
+                  itemBuilder: (_, i) {
+                    final line = logs[logs.length - 1 - i];
+                    return Text(
+                      line,
+                      style: TextStyle(
+                        fontFamily: 'monospace',
+                        fontSize: 11,
+                        color: line.contains('exception') ||
+                                line.contains('error') ||
+                                line.contains('stderr')
+                            ? Colors.red.shade300
+                            : line.contains('matched') ||
+                                    line.contains('→')
+                                ? Colors.green.shade300
+                                : Colors.grey.shade300,
+                      ),
+                    );
+                  },
+                ),
+        ),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            OutlinedButton.icon(
+              onPressed: logs.isEmpty
+                  ? null
+                  : () {
+                      Clipboard.setData(
+                          ClipboardData(text: logs.join('\n')));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Logs copied')),
+                      );
+                    },
+              icon: const Icon(Icons.copy, size: 14),
+              label: const Text('Copy all'),
+              style: OutlinedButton.styleFrom(
+                  visualDensity: VisualDensity.compact),
+            ),
+            const SizedBox(width: 8),
+            OutlinedButton.icon(
+              onPressed: logs.isEmpty ? null : onClear,
+              icon: const Icon(Icons.delete_outline, size: 14),
+              label: const Text('Clear'),
+              style: OutlinedButton.styleFrom(
+                  visualDensity: VisualDensity.compact),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }
