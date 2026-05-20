@@ -141,7 +141,7 @@ Flutter app that serves a dual purpose: (1) it **embeds the SvelteKit PWA in a W
 - **App tab** (`lib/screens/web_screen.dart`) — `flutter_inappwebview` WebView loading the configured PocketLedger URL. The plugin injects `window.flutter_inappwebview` into the page; `print.ts` calls `window.flutter_inappwebview.callHandler('FlutterPrint', {type, ...data})` which triggers `_onPrint()` in Dart → USB/TCP print directly. No HTTP round-trip needed.
 - **Settings tab** (`lib/screens/home_screen.dart`) — PocketLedger URL field + auto-detect status cards for each printer. Saving the URL reloads the WebView. Printer connections are discovered automatically (see below); manual IP override is available as a collapsible fallback. A collapsible "Debug Logs" panel at the bottom shows timestamped entries from `PrinterDiscovery.logs` (last 200, newest-first) with copy-all and clear buttons — useful for diagnosing USB detection failures.
 
-**Printer support** (see [`docs/printers.md`](docs/printers.md) for full hardware specs and [`docs/linux-setup.md`](docs/linux-setup.md) for Linux CUPS/USB setup):
+**Printer support** (see [`docs/printers.md`](docs/printers.md) for full hardware specs, [`docs/linux-setup.md`](docs/linux-setup.md) for Linux CUPS/USB setup, and [`docs/windows-setup.md`](docs/windows-setup.md) for Windows printer installation):
 - `lib/services/tspl_printer.dart` — TSPL commands for **TVS LP 46 dlite** (barcode labels, 50 mm × 30 mm, 203 DPI).
 - `lib/services/escpos_printer.dart` — ESC/POS bytes for **TVS RP 3230** (80 mm thermal receipt).
 - `lib/services/printer_connection.dart` — sealed `PrinterConnection` type: `UsbConnection(path)` or `TcpConnection(ip, port)`. Both printer services accept this and dispatch to the correct transport.

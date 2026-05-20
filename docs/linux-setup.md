@@ -83,7 +83,7 @@ Or log out and back in. After that, the companion app writes directly to `/dev/u
 | Platform | Detection chain |
 |---|---|
 | Linux | CUPS queue (`lpstat -v`) → `/dev/usb/lp*` → TCP port 9100 scan on LAN |
-| Windows | USB printer port (PowerShell `Win32_Printer`) → TCP scan |
+| Windows | Named USB printer (`Win32_Printer`, matched by name) → generic USB port fallback → TCP scan (see [windows-setup.md](windows-setup.md)) |
 | Android | TCP port 9100 scan on LAN only |
 
 If **two USB printers** are found, the first device (`lp0`) is assigned to the receipt printer and the second (`lp1`) to the label printer. Use **Manual override** in the Settings tab to swap them if plugged in the wrong order.
