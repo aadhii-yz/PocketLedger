@@ -469,6 +469,21 @@ class PrinterDiscovery extends ChangeNotifier {
   // Queries Win32_Printer for USB-connected printers and matches by name to
   // identify the receipt (RP 3230) and label (LP 46 dlite) ports.
   // Uses Get-CimInstance with a Get-WmiObject fallback for PS 5 compatibility.
+  // Lists physically connected USB printer devices via PnP (even uninstalled
+  // ones) — used only for diagnostic logging, not for detection.
+  Future<void> _logWindowsPnpPrinters() async {
+    try {
+      final result = await Process.run('powershell', [
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        r"Get-PnpDevice -PresentOnly | Where-Object { $_.Class -eq 'Printer' -or ($_.Class -eq 'USB' -and $_.FriendlyName -match 'print') } | Select-Object FriendlyName, Status | ForEach-Object { ""$($_.FriendlyName)|$($_.Status)"" }",
+      ]);
+      final out = (result.stdout as String).trim();
+      _log('Win PnP devices: ${out.isEmpty ? '<none visible to Get-PnpDevice>' : out}');
+    } catch (_) {}
+  }
+
   Future<_CupsQueues> _detectWindowsPrinters() async {
     _log('Win: running Get-CimInstance Win32_Printer');
     try {
@@ -514,7 +529,8 @@ class PrinterDiscovery extends ChangeNotifier {
         }
       }
       if (receipt == null && label == null) {
-        _log('Win: no model name matched');
+        _log('Win: no model name matched — printers may not be installed in Windows');
+        await _logWindowsPnpPrinters();
       }
       return (receipt: receipt, label: label);
     } catch (e) {

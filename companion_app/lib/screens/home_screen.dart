@@ -418,6 +418,24 @@ class _PrinterCard extends StatelessWidget {
                     fontWeight: FontWeight.bold, fontSize: 15)),
             const SizedBox(height: 10),
             _statusRow(),
+            if (state.status == DiscoveryStatus.failed && Platform.isWindows) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: Colors.blue.shade200),
+                ),
+                child: const Text(
+                  'Printer not found in Windows.\n'
+                  'One-time setup: Settings → Bluetooth & devices → Printers & scanners → Add device.\n'
+                  'If not listed, add manually with driver "Generic / Text Only" and name it '
+                  '"TVS RP 3230" (receipt) or "TVS LP 46" (label).',
+                  style: TextStyle(fontSize: 12),
+                ),
+              ),
+            ],
             if (state.status == DiscoveryStatus.noPermission) ...[
               const SizedBox(height: 8),
               Container(
