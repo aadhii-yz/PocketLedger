@@ -139,6 +139,7 @@
   let categoryForm = $state({ name: "", description: "" });
   let savingCategory = $state(false);
   let categoryError = $state("");
+  let inlineNewCategory = $state("");
 
   let formData = $state({
     name: "",
@@ -302,7 +303,7 @@
         name: parsed.data.name,
         sku: parsed.data.sku,
         barcode: formData.barcode,
-        category: parsed.data.categoryId,
+        category: parsed.data.categoryId ?? "",
         selling_price: parsed.data.sellingPrice,
         cost_price: parsed.data.costPrice,
         tax_rate: parsed.data.taxRate,
@@ -467,19 +468,87 @@
                 <label
                   class="block mb-2 text-sm text-muted-foreground"
                   for="cat"
-                  >Category <span class="text-destructive">*</span></label
+                  >Category</label
                 >
                 <select
                   id="cat"
                   bind:value={formData.categoryId}
                   class="w-full px-4 py-3 bg-input-background border border-border rounded-lg outline-none focus:ring-2 focus:ring-ring transition-all"
-                  required
                 >
-                  <option value="">Select category</option>
+                  <option value="">No category</option>
                   {#each categories as cat}
                     <option value={cat.id}>{cat.name}</option>
                   {/each}
                 </select>
+                {#if !inlineNewCategory && !savingCategory}
+                  <button
+                    type="button"
+                    onclick={() => (inlineNewCategory = " ")}
+                    class="mt-1.5 flex items-center gap-1 text-xs text-primary hover:underline"
+                  >
+                    <Plus class="w-3 h-3" /> New category
+                  </button>
+                {:else}
+                  <div class="mt-1.5 flex gap-2 items-center">
+                    <input
+                      type="text"
+                      bind:value={inlineNewCategory}
+                      placeholder="Category name"
+                      autofocus
+                      class="flex-1 px-3 py-1.5 text-sm bg-input-background border border-border rounded-lg outline-none focus:ring-2 focus:ring-ring transition-all"
+                      onkeydown={async (e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          const name = inlineNewCategory.trim();
+                          if (!name) { inlineNewCategory = ""; return; }
+                          savingCategory = true;
+                          categoryError = "";
+                          try {
+                            const record = await pb.collection("categories").create({ name, description: "" });
+                            categories = [...categories, { id: record.id, name: record["name"], description: "" }].sort((a, b) => a.name.localeCompare(b.name));
+                            formData.categoryId = record.id;
+                            inlineNewCategory = "";
+                          } catch (err: any) {
+                            categoryError = err.message || "Failed";
+                          } finally {
+                            savingCategory = false;
+                          }
+                        } else if (e.key === "Escape") {
+                          inlineNewCategory = "";
+                        }
+                      }}
+                    />
+                    <button
+                      type="button"
+                      disabled={savingCategory}
+                      onclick={async () => {
+                        const name = inlineNewCategory.trim();
+                        if (!name) { inlineNewCategory = ""; return; }
+                        savingCategory = true;
+                        categoryError = "";
+                        try {
+                          const record = await pb.collection("categories").create({ name, description: "" });
+                          categories = [...categories, { id: record.id, name: record["name"], description: "" }].sort((a, b) => a.name.localeCompare(b.name));
+                          formData.categoryId = record.id;
+                          inlineNewCategory = "";
+                        } catch (err: any) {
+                          categoryError = err.message || "Failed";
+                        } finally {
+                          savingCategory = false;
+                        }
+                      }}
+                      class="px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-lg hover:opacity-90 disabled:opacity-50 transition-opacity"
+                    >{savingCategory ? "…" : "Add"}</button>
+                    <button
+                      type="button"
+                      onclick={() => (inlineNewCategory = "")}
+                      class="p-1.5 hover:bg-muted rounded transition-colors"
+                    ><X class="w-3.5 h-3.5 text-muted-foreground" /></button>
+                  </div>
+                  {#if categoryError}
+                    <p class="mt-1 text-xs text-destructive">{categoryError}</p>
+                  {/if}
+                {/if}
               </div>
 
               <Input

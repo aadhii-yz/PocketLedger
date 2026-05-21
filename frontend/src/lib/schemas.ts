@@ -170,7 +170,7 @@ export const ProductFormSchema = z.object({
   name: z.string().min(1, 'Product name is required'),
   sku: z.string().min(1, 'SKU is required'),
   barcode: z.string().optional(),
-  categoryId: z.string().min(1, 'Category is required'),
+  categoryId: z.string().optional(),
   unit: UnitSchema.optional(),
   sellingPrice: z.coerce
     .number({ invalid_type_error: 'Selling price must be a number' })
