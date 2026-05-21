@@ -14,8 +14,9 @@ class WifiConfigScreen extends StatefulWidget {
 
 class _WifiConfigScreenState extends State<WifiConfigScreen> {
   _Step _step = _Step.instructions;
-  List<String> _networks = [];
+  List<Map<String, String>> _networks = []; // {ssid, mac}
   String? _selectedSsid;
+  String? _selectedBssid;
   final _passwordCtrl = TextEditingController();
   bool _passwordVisible = false;
   String? _errorMsg;
@@ -36,14 +37,15 @@ class _WifiConfigScreenState extends State<WifiConfigScreen> {
       final body = await res.transform(utf8.decoder).join();
       final json = jsonDecode(body) as Map<String, dynamic>;
       if (json['state'] == 0) {
+        final seen = <String>{};
         final networks = (json['wifilist'] as List)
-            .map((e) => e['ssid'] as String)
-            .where((s) => s.isNotEmpty)
-            .toSet()
+            .map((e) => {'ssid': e['ssid'] as String, 'mac': e['mac'] as String? ?? ''})
+            .where((e) => e['ssid']!.isNotEmpty && seen.add(e['ssid']!))
             .toList();
         setState(() {
           _networks = networks;
-          _selectedSsid = networks.isNotEmpty ? networks.first : null;
+          _selectedSsid = networks.isNotEmpty ? networks.first['ssid'] : null;
+          _selectedBssid = networks.isNotEmpty ? networks.first['mac'] : null;
           _step = _Step.credentials;
         });
       } else {
@@ -71,10 +73,12 @@ class _WifiConfigScreenState extends State<WifiConfigScreen> {
       final req =
           await client.postUrl(Uri.parse('http://192.168.4.1/connap'));
       req.headers.set('Content-Type', 'application/json');
+      // Firmware expects raw (unencoded) form body with JSON content-type header.
+      // Do NOT use Uri.encodeQueryComponent — the firmware does not URL-decode values.
       final payload =
-          'ssid=${Uri.encodeQueryComponent(_selectedSsid!)}'
-          '&pwd=${Uri.encodeQueryComponent(_passwordCtrl.text)}'
-          '&bssid=&autoconn=1';
+          'ssid=$_selectedSsid'
+          '&pwd=${_passwordCtrl.text}'
+          '&bssid=${_selectedBssid ?? ''}&autoconn=1';
       final bytes = utf8.encode(payload);
       req.contentLength = bytes.length;
       req.add(bytes);
@@ -84,8 +88,16 @@ class _WifiConfigScreenState extends State<WifiConfigScreen> {
       if (json['state'] == 0) {
         setState(() => _step = _Step.success);
       } else {
+        final code = json['error_code'] ?? json['state'];
+        const codeMap = {
+          400: 'bad params',
+          406: 'wrong request type',
+          500: 'server error',
+          600: 'wrong password',
+        };
+        final detail = codeMap[code] ?? 'unknown';
         setState(() {
-          _errorMsg = 'Printer returned error code ${json['state']}.\n\n'
+          _errorMsg = 'Printer returned error $code ($detail).\n\n'
               '400 = bad params, 406 = wrong request type, '
               '500 = server error, 600 = wrong password.';
           _step = _Step.error;
@@ -178,9 +190,13 @@ class _WifiConfigScreenState extends State<WifiConfigScreen> {
             border: OutlineInputBorder(),
           ),
           items: _networks
-              .map((s) => DropdownMenuItem(value: s, child: Text(s)))
+              .map((n) => DropdownMenuItem(value: n['ssid'], child: Text(n['ssid']!)))
               .toList(),
-          onChanged: (v) => setState(() => _selectedSsid = v),
+          onChanged: (v) => setState(() {
+            _selectedSsid = v;
+            _selectedBssid = _networks
+                .firstWhere((n) => n['ssid'] == v, orElse: () => {'mac': ''})['mac'];
+          }),
         ),
         const SizedBox(height: 16),
         TextField(
