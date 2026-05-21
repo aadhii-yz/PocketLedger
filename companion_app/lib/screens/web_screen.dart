@@ -73,6 +73,11 @@ class _WebScreenState extends State<WebScreen> {
       InAppWebView(
         initialUrlRequest: URLRequest(url: WebUri(url)),
         initialSettings: InAppWebViewSettings(javaScriptEnabled: true),
+        gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
+          Factory<OneSequenceGestureRecognizer>(
+            () => EagerGestureRecognizer(),
+          ),
+        },
         onWebViewCreated: (controller) => controller.addJavaScriptHandler(
           handlerName: 'FlutterPrint',
           callback: _onPrint,
