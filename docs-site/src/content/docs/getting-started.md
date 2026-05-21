@@ -11,9 +11,9 @@ A separate **Flutter companion app** runs locally on your device to bridge the c
 
 ```
           ┌─────────────────────────────────┐
-          │   PocketLedger Backend           │
-          │   Go + PocketBase (SQLite)       │
-          │   Hosted on your server / VPS    │
+          │   PocketLedger Backend          │
+          │   Go + PocketBase (SQLite)      │
+          │   Hosted on your server / VPS   │
           └────────────┬────────────────────┘
                        │ HTTPS REST API
           ┌────────────▼────────────────────┐
@@ -22,15 +22,15 @@ A separate **Flutter companion app** runs locally on your device to bridge the c
           └────────────┬────────────────────┘
                        │ localhost:8765 or JS channel
           ┌────────────▼────────────────────┐
-          │   Companion App (Flutter)        │
-          │   Linux / Windows / Android      │
+          │   Companion App (Flutter)       │
+          │   Linux / Windows / Android     │
           │   USB + TCP/IP printer access   │
           └────────────┬────────────────────┘
                        │ USB / TCP 9100
           ┌────────────▼────────────────────┐
-          │   Thermal Printers               │
+          │   Thermal Printers              │
           │   TVS RP 3230 (receipt, 80 mm)  │
-          │   TVS LP 46 (label, 50×30 mm)  │
+          │   TVS LP 46 (label, 50×30 mm)   │
           └─────────────────────────────────┘
 ```
 
