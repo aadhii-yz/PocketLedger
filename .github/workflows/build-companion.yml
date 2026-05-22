@@ -108,6 +108,19 @@ jobs:
           flutter pub get
           flutter build windows --release
 
+      - name: Bundle VC++ runtime DLLs
+        shell: pwsh
+        run: |
+          # Flutter release exes link against the MSVC runtime. Ship the runtime
+          # DLLs next to the exe so the app runs on machines without the VC++
+          # Redistributable installed (fresh/old Windows shows VCRUNTIME140_1.dll
+          # not found). App-local deployment of these DLLs is permitted by MS.
+          $dest = "companion_app/build/windows/x64/runner/Release"
+          foreach ($dll in @('msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll')) {
+            Copy-Item "$env:SystemRoot\System32\$dll" -Destination $dest -Force
+            Write-Host "Bundled $dll"
+          }
+
       - name: Zip Windows build
         shell: pwsh
         run: |

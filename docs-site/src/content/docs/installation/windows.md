@@ -51,6 +51,8 @@ The companion app uses PowerShell's `Win32_Printer` to find printers by display 
 
 Fallback chain: USB name match → generic USB port probe → TCP port 9100 LAN scan.
 
+A manually-added USB printer stays installed in Windows even after you unplug the cable, so the app also checks the printer's `WorkOffline` flag and skips any printer Windows reports as offline. This prevents the app from showing "USB connected" when nothing is plugged in.
+
 ## Troubleshooting detection
 
 If detection fails, expand **Debug Logs** at the bottom of the Settings tab:
@@ -60,6 +62,13 @@ If detection fails, expand **Debug Logs** at the bottom of the Settings tab:
 | `Win PS stdout="<empty>"` | Printer not registered in Windows | Repeat Step 1 |
 | `Win printer: name="..." port="..."` | Printer found but name doesn't match | Rename the printer in Windows to match |
 | `Win: matched receipt → TVS RP 3230` | Detected correctly | — |
+| `Win: skipping "..." — WorkOffline` | Printer installed but cable unplugged | Plug in the USB cable, then re-scan |
 | `OpenPrinter('TVS RP 3230') failed` | Printer paused or spooler error | Right-click printer → Resume |
 
 If both printers are assigned to the same port name (plugged in simultaneously), unplug one, install it alone, then plug in the second.
+
+## App won't start: "VCRUNTIME140_1.dll was not found"
+
+Older builds did not bundle the Microsoft Visual C++ runtime, so the exe failed to launch on fresh or older Windows installs that lack the VC++ Redistributable. Current builds ship `msvcp140.dll`, `vcruntime140.dll`, and `vcruntime140_1.dll` alongside the exe, so this no longer happens.
+
+If you still hit this error on an old build, either download the latest release or install the [Microsoft Visual C++ Redistributable (x64)](https://aka.ms/vs/17/release/vc_redist.x64.exe).

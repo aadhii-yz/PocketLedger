@@ -533,7 +533,7 @@ class PrinterDiscovery extends ChangeNotifier {
         '-Command',
         r'$p = try { Get-CimInstance Win32_Printer } catch { Get-WmiObject Win32_Printer };'
         r' $p | Where-Object { $_.PortName -match "^USB" } |'
-        r' ForEach-Object { "$($_.Name)|$($_.PortName)" }',
+        r' ForEach-Object { "$($_.Name)|$($_.PortName)|$($_.WorkOffline)" }',
       ]);
       _log('Win PS exit=${result.exitCode} stderr="${(result.stderr as String).trim()}"');
       final stdout = (result.stdout as String).trim();
@@ -544,13 +544,22 @@ class PrinterDiscovery extends ChangeNotifier {
       String? label;
       for (final raw in stdout.split('\n')) {
         final line = raw.trim();
-        final sep = line.indexOf('|');
-        if (sep < 0) continue;
-        final originalName = line.substring(0, sep).trim();
+        final parts = line.split('|');
+        if (parts.length < 2) continue;
+        final originalName = parts[0].trim();
         final name = originalName.toLowerCase();
-        final port = line.substring(sep + 1).trim();
+        final port = parts[1].trim();
         if (port.isEmpty) continue;
-        _log('Win printer: name="$name" port="$port"');
+        // WorkOffline is True when the USB printer is unplugged but the queue
+        // is still installed in Windows. Skip these — a manually-added printer
+        // persists in Win32_Printer forever, so name-match alone reports a
+        // disconnected printer as "connected".
+        final offline = parts.length > 2 && parts[2].trim().toLowerCase() == 'true';
+        _log('Win printer: name="$name" port="$port" offline=$offline');
+        if (offline) {
+          _log('Win: skipping "$originalName" — WorkOffline (cable unplugged?)');
+          continue;
+        }
 
         if (receipt == null &&
             (name.contains('3230') ||
@@ -621,7 +630,7 @@ class PrinterDiscovery extends ChangeNotifier {
         '-NoProfile',
         '-NonInteractive',
         '-Command',
-        r"Get-WmiObject -Class Win32_Printer | Where-Object { $_.PortName -match '^USB\d+' } | Select-Object -ExpandProperty PortName",
+        r"Get-WmiObject -Class Win32_Printer | Where-Object { $_.PortName -match '^USB\d+' -and -not $_.WorkOffline } | Select-Object -ExpandProperty PortName",
       ]);
       _log('Win USB probe: exit=${result.exitCode} stderr="${(result.stderr as String).trim()}"');
       final stdout = (result.stdout as String).trim();
