@@ -20,6 +20,9 @@ class _WifiConfigScreenState extends State<WifiConfigScreen> {
   final _passwordCtrl = TextEditingController();
   bool _passwordVisible = false;
   String? _errorMsg;
+  String? _debugPayload;
+  String? _debugResponse;
+  String? _sessionCookie; // captured from /scanap response, relayed to /connap
 
   @override
   void dispose() {
@@ -32,8 +35,25 @@ class _WifiConfigScreenState extends State<WifiConfigScreen> {
     try {
       final client = HttpClient()
         ..connectionTimeout = const Duration(seconds: 5);
+      // Hit the root page first so the firmware can issue a session cookie,
+      // then relay that cookie to the POST /connap request later.
+      try {
+        final homeReq = await client.getUrl(Uri.parse('http://192.168.4.1/'));
+        final homeRes = await homeReq.close().timeout(const Duration(seconds: 5));
+        final cookies = homeRes.headers['set-cookie'];
+        if (cookies != null && cookies.isNotEmpty) {
+          _sessionCookie = cookies.map((c) => c.split(';')[0]).join('; ');
+        }
+        await homeRes.drain<void>();
+      } catch (_) {}
       final req = await client.getUrl(Uri.parse('http://192.168.4.1/scanap'));
       final res = await req.close().timeout(const Duration(seconds: 15));
+      // Also capture any cookie set on /scanap itself.
+      final scanCookies = res.headers['set-cookie'];
+      if (scanCookies != null && scanCookies.isNotEmpty) {
+        final extra = scanCookies.map((c) => c.split(';')[0]).join('; ');
+        _sessionCookie = _sessionCookie != null ? '$_sessionCookie; $extra' : extra;
+      }
       final body = await res.transform(utf8.decoder).join();
       final json = jsonDecode(body) as Map<String, dynamic>;
       if (json['state'] == 0) {
@@ -64,26 +84,60 @@ class _WifiConfigScreenState extends State<WifiConfigScreen> {
     }
   }
 
+  // Raw TCP so we control exact header name capitalisation.
+  // Dart's HttpClient lowercases all header names; some ESP firmware HTTP parsers
+  // are case-sensitive and won't recognise 'content-type' instead of 'Content-Type'.
+  Future<String> _rawPost(String payload) async {
+    final bodyBytes = utf8.encode(payload);
+    // Build request with exact mixed-case header names that jQuery/browser sends.
+    final reqLines = StringBuffer()
+      ..write('POST /connap HTTP/1.1\r\n')
+      ..write('Host: 192.168.4.1\r\n')
+      ..write('Content-Type: application/json\r\n')
+      ..write('X-Requested-With: XMLHttpRequest\r\n')
+      ..write('Accept: application/json, text/javascript, */*; q=0.01\r\n')
+      ..write('Origin: http://192.168.4.1\r\n')
+      ..write('Referer: http://192.168.4.1/pages/wifi/station.html\r\n')
+      ..write('Content-Length: ${bodyBytes.length}\r\n');
+    if (_sessionCookie != null && _sessionCookie!.isNotEmpty) {
+      reqLines.write('Cookie: $_sessionCookie\r\n');
+    }
+    reqLines.write('Connection: close\r\n\r\n');
+
+    final socket = await Socket.connect('192.168.4.1', 80,
+        timeout: const Duration(seconds: 8));
+    try {
+      // Start accumulating response before sending so no bytes are missed.
+      final responseFuture = socket.fold<List<int>>(
+          [], (acc, chunk) { acc.addAll(chunk); return acc; });
+      socket.add(utf8.encode(reqLines.toString()));
+      socket.add(bodyBytes);
+      await socket.flush();
+
+      final responseBytes =
+          await responseFuture.timeout(const Duration(seconds: 10));
+      final response = utf8.decode(responseBytes, allowMalformed: true);
+      // Strip HTTP response headers — body starts after the blank line.
+      final sep = response.indexOf('\r\n\r\n');
+      return sep >= 0 ? response.substring(sep + 4).trim() : response.trim();
+    } finally {
+      socket.destroy();
+    }
+  }
+
   Future<void> _saveConfig() async {
     if (_selectedSsid == null) return;
     setState(() => _step = _Step.saving);
     try {
-      final client = HttpClient()
-        ..connectionTimeout = const Duration(seconds: 8);
-      final req =
-          await client.postUrl(Uri.parse('http://192.168.4.1/connap'));
-      req.headers.set('Content-Type', 'application/json');
-      // Firmware expects raw (unencoded) form body with JSON content-type header.
-      // Do NOT use Uri.encodeQueryComponent — the firmware does not URL-decode values.
-      final payload =
-          'ssid=$_selectedSsid'
+      final bssid = _selectedBssid ?? '';
+      // autoconn=undefined: station.html has no radio button for this field, so the
+      // reference web UI produces the literal JS string "autoconn=undefined".
+      final payload = 'ssid=$_selectedSsid'
           '&pwd=${_passwordCtrl.text}'
-          '&bssid=${_selectedBssid ?? ''}&autoconn=1';
-      final bytes = utf8.encode(payload);
-      req.contentLength = bytes.length;
-      req.add(bytes);
-      final res = await req.close().timeout(const Duration(seconds: 10));
-      final body = await res.transform(utf8.decoder).join();
+          '&bssid=$bssid'
+          '&autoconn=undefined';
+
+      final body = await _rawPost(payload);
       final json = jsonDecode(body) as Map<String, dynamic>;
       if (json['state'] == 0) {
         setState(() => _step = _Step.success);
@@ -97,6 +151,8 @@ class _WifiConfigScreenState extends State<WifiConfigScreen> {
         };
         final detail = codeMap[code] ?? 'unknown';
         setState(() {
+          _debugPayload = payload;
+          _debugResponse = body;
           _errorMsg = 'Printer returned error $code ($detail).\n\n'
               '400 = bad params, 406 = wrong request type, '
               '500 = server error, 600 = wrong password.';
@@ -279,6 +335,24 @@ class _WifiConfigScreenState extends State<WifiConfigScreen> {
             style: const TextStyle(fontSize: 13),
           ),
         ),
+        if (_debugPayload != null) ...[
+          const SizedBox(height: 12),
+          const Text('Sent payload:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+          const SizedBox(height: 4),
+          SelectableText(
+            _debugPayload!,
+            style: const TextStyle(fontSize: 11, fontFamily: 'monospace'),
+          ),
+        ],
+        if (_debugResponse != null) ...[
+          const SizedBox(height: 8),
+          const Text('Raw response:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+          const SizedBox(height: 4),
+          SelectableText(
+            _debugResponse!,
+            style: const TextStyle(fontSize: 11, fontFamily: 'monospace'),
+          ),
+        ],
         const SizedBox(height: 16),
         const Text(
           'Manual fallback',
@@ -306,6 +380,8 @@ class _WifiConfigScreenState extends State<WifiConfigScreen> {
             onPressed: () => setState(() {
               _step = _Step.instructions;
               _errorMsg = null;
+              _debugPayload = null;
+              _debugResponse = null;
             }),
             icon: const Icon(Icons.refresh),
             label: const Text('Try again'),
