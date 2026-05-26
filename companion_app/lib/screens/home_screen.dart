@@ -281,7 +281,11 @@ class _HomeScreenState extends State<HomeScreen> {
               onConfigureWifi: (d.barcodeState.status == DiscoveryStatus.softAp ||
                                 d.barcodeState.status == DiscoveryStatus.failed)
                   ? () => Navigator.push(context,
-                        MaterialPageRoute(builder: (_) => const WifiConfigScreen()))
+                        MaterialPageRoute(
+                          builder: (_) => WifiConfigScreen(
+                            initialStatus: d.barcodeState.status,
+                          ),
+                        ))
                   : null,
               manualIpCtrl: _barcodeManualIpCtrl,
               onSaveManual: _setBarcodeManual,

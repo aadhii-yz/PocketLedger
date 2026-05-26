@@ -2,11 +2,25 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import '../services/printer_discovery.dart';
+import '../services/wifi_switcher.dart';
 
-enum _Step { instructions, scanning, credentials, saving, success, error }
+enum _Step {
+  autoSwitching, // connecting to DEFAULT_AP_CB8F29 automatically
+  instructions,  // manual fallback (auto-switch unsupported or failed)
+  scanning,      // scanning /scanap for available networks
+  credentials,   // SSID dropdown + password field
+  saving,        // POSTing config to /connap
+  success,       // printer configured
+  error,
+}
 
 class WifiConfigScreen extends StatefulWidget {
-  const WifiConfigScreen({super.key});
+  /// The current discovery status of the label printer. Pass
+  /// [DiscoveryStatus.softAp] when the device is already on the printer's AP
+  /// so the wizard skips the connect step and jumps directly to scanning.
+  final DiscoveryStatus? initialStatus;
+
+  const WifiConfigScreen({super.key, this.initialStatus});
 
   @override
   State<WifiConfigScreen> createState() => _WifiConfigScreenState();
@@ -24,11 +38,82 @@ class _WifiConfigScreenState extends State<WifiConfigScreen> {
   String? _debugResponse;
   String? _sessionCookie; // captured from /scanap response, relayed to /connap
 
+  // Auto-switch state
+  bool _autoMode = false;
+  bool _didAutoSwitch = false; // true when we successfully switched to printer AP
+  String? _previousSsid;      // SSID to restore when Done is tapped
+  String? _autoSwitchError;   // shown in instructions fallback if auto-switch failed
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.initialStatus == DiscoveryStatus.softAp) {
+      // Already on the printer's AP — skip the connect step.
+      _step = _Step.scanning;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _scanNetworks());
+    } else if (WifiSwitcher.isSupported) {
+      _step = _Step.autoSwitching;
+      _autoMode = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _autoConnectToAp());
+    }
+    // else: stay on _Step.instructions (default)
+  }
+
   @override
   void dispose() {
     _passwordCtrl.dispose();
     super.dispose();
   }
+
+  // ── Auto WiFi switch ───────────────────────────────────────────────────────
+
+  Future<void> _autoConnectToAp() async {
+    _previousSsid = await WifiSwitcher.currentSsid();
+    PrinterDiscovery.instance.addLog('WiFi: current SSID=$_previousSsid');
+
+    final result = await WifiSwitcher.connect(
+      'DEFAULT_AP_CB8F29',
+      password: '12345678',
+    );
+    if (!mounted) return;
+
+    if (!result.success) {
+      PrinterDiscovery.instance.addLog(
+          'WiFi: auto-connect failed — ${result.error}');
+      setState(() {
+        _autoSwitchError = result.error;
+        _step = _Step.instructions;
+      });
+      return;
+    }
+
+    _didAutoSwitch = true;
+    PrinterDiscovery.instance.addLog('WiFi: connected to DEFAULT_AP_CB8F29');
+
+    // Wait for the printer's web interface to become reachable.
+    final reachable = await WifiSwitcher.waitForHost(
+      '192.168.4.1',
+      port: 80,
+      timeout: const Duration(seconds: 20),
+    );
+    if (!mounted) return;
+
+    if (!reachable) {
+      PrinterDiscovery.instance.addLog(
+          'WiFi: connected but printer not responding at 192.168.4.1');
+      setState(() {
+        _errorMsg = 'Connected to DEFAULT_AP_CB8F29 but the printer is not '
+            'responding at 192.168.4.1.\n\n'
+            'Make sure the label printer is powered on and in SoftAP mode.';
+        _step = _Step.error;
+      });
+      return;
+    }
+
+    await _scanNetworks();
+  }
+
+  // ── Network scan & config ──────────────────────────────────────────────────
 
   Future<void> _scanNetworks() async {
     setState(() => _step = _Step.scanning);
@@ -168,9 +253,19 @@ class _WifiConfigScreenState extends State<WifiConfigScreen> {
   }
 
   void _done() {
+    if (_autoMode && _didAutoSwitch) {
+      // Fire-and-forget: reconnect to the previous network in the background.
+      // Discovery's 30-second retry timer will pick up the printer's new IP
+      // once the device is back on the office WiFi.
+      WifiSwitcher.reconnect(_previousSsid).ignore();
+      PrinterDiscovery.instance.addLog(
+          'WiFi: reconnecting to ${_previousSsid ?? 'previous network'}');
+    }
     PrinterDiscovery.instance.scanBarcodeNow();
     Navigator.pop(context);
   }
+
+  // ── Build ──────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -182,6 +277,7 @@ class _WifiConfigScreenState extends State<WifiConfigScreen> {
       body: Padding(
         padding: const EdgeInsets.all(24),
         child: switch (_step) {
+          _Step.autoSwitching => _buildAutoSwitching(),
           _Step.instructions => _buildInstructions(),
           _Step.scanning => _buildSpinner('Scanning available networks…'),
           _Step.credentials => _buildCredentials(),
@@ -189,6 +285,35 @@ class _WifiConfigScreenState extends State<WifiConfigScreen> {
           _Step.success => _buildSuccess(),
           _Step.error => _buildError(),
         },
+      ),
+    );
+  }
+
+  Widget _buildAutoSwitching() {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const CircularProgressIndicator(),
+          const SizedBox(height: 20),
+          const Text(
+            'Connecting to printer hotspot…',
+            style: TextStyle(fontSize: 15),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'DEFAULT_AP_CB8F29',
+            style: TextStyle(color: Colors.grey[600], fontSize: 13),
+          ),
+          if (Platform.isAndroid) ...[
+            const SizedBox(height: 12),
+            Text(
+              'You may be prompted to confirm\nthe WiFi connection.',
+              style: TextStyle(color: Colors.grey[600], fontSize: 12),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -204,6 +329,23 @@ class _WifiConfigScreenState extends State<WifiConfigScreen> {
           style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 12),
+        if (_autoSwitchError != null) ...[
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(10),
+            margin: const EdgeInsets.only(bottom: 12),
+            decoration: BoxDecoration(
+              color: Colors.orange.shade50,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.orange.shade200),
+            ),
+            child: Text(
+              'Auto-connect failed — please connect manually.\n'
+              'Detail: $_autoSwitchError',
+              style: const TextStyle(fontSize: 12),
+            ),
+          ),
+        ],
         _infoBox(
           'Go to your device\'s WiFi settings and connect to:\n\n'
           '  Network: DEFAULT_AP_CB8F29\n'
@@ -240,7 +382,7 @@ class _WifiConfigScreenState extends State<WifiConfigScreen> {
         ),
         const SizedBox(height: 20),
         DropdownButtonFormField<String>(
-          value: _selectedSsid,
+          value: _selectedSsid, // ignore: deprecated_member_use
           decoration: const InputDecoration(
             labelText: 'Network (SSID)',
             border: OutlineInputBorder(),
@@ -283,6 +425,13 @@ class _WifiConfigScreenState extends State<WifiConfigScreen> {
   }
 
   Widget _buildSuccess() {
+    final autoMsg = 'The printer is connecting to "$_selectedSsid".\n\n'
+        'Tap Done — the app will switch your WiFi back and '
+        'discover the printer automatically.';
+    final manualMsg = 'The printer is now connecting to "$_selectedSsid".\n\n'
+        'Switch your device back to your regular WiFi network, '
+        'then tap Done — the app will scan and discover the printer\'s new IP.';
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -293,11 +442,7 @@ class _WifiConfigScreenState extends State<WifiConfigScreen> {
           style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 12),
-        _infoBox(
-          'The printer is now connecting to "$_selectedSsid".\n\n'
-          'Switch your device back to your regular WiFi network, '
-          'then tap Done — the app will scan and discover the printer\'s new IP.',
-        ),
+        _infoBox(_autoMode && _didAutoSwitch ? autoMsg : manualMsg),
         const Spacer(),
         SizedBox(
           width: double.infinity,
@@ -378,10 +523,15 @@ class _WifiConfigScreenState extends State<WifiConfigScreen> {
           width: double.infinity,
           child: OutlinedButton.icon(
             onPressed: () => setState(() {
-              _step = _Step.instructions;
+              _step = _autoMode ? _Step.autoSwitching : _Step.instructions;
               _errorMsg = null;
               _debugPayload = null;
               _debugResponse = null;
+              if (_autoMode) {
+                _didAutoSwitch = false;
+                WidgetsBinding.instance
+                    .addPostFrameCallback((_) => _autoConnectToAp());
+              }
             }),
             icon: const Icon(Icons.refresh),
             label: const Text('Try again'),

@@ -8,6 +8,11 @@
 <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
 <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
 <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+<!-- wifi_iot: programmatic WiFi switching for the printer AP wizard -->
+<uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
+<uses-permission android:name="android.permission.CHANGE_WIFI_STATE"/>
+<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+<uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
 
 <!--
   2. Inside <application> (anywhere inside it):

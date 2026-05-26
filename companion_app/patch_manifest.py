@@ -15,6 +15,11 @@ permissions = (
     '    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>\n'
     '    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>\n'
     '    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>\n'
+    # wifi_iot: required for programmatic WiFi connection (auto WiFi switcher)
+    '    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>\n'
+    '    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE"/>\n'
+    '    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>\n'
+    '    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>\n'
     '    '
 )
 
