@@ -151,7 +151,7 @@ Flutter app that serves a dual purpose: (1) it **embeds the SvelteKit PWA in a W
 - `WifiSwitcher.waitForHost(host, port, timeout)` polls TCP until the printer's web interface is reachable after the switch.
 
 **Printer support** (see [`docs-site/src/content/docs/printers/`](docs-site/src/content/docs/printers/) for full hardware specs and WiFi setup, [`docs-site/src/content/docs/installation/linux.md`](docs-site/src/content/docs/installation/linux.md) for Linux CUPS/USB setup, and [`docs-site/src/content/docs/installation/windows.md`](docs-site/src/content/docs/installation/windows.md) for Windows printer installation):
-- `lib/services/tspl_printer.dart` — TSPL commands for **TVS LP 46 dlite** (barcode labels, 50 mm × 30 mm, 203 DPI).
+- `lib/services/tspl_printer.dart` — TSPL commands for **TVS LP 46 dlite** (203 DPI). Supports three named templates selectable from print settings: `small` (40×20 mm), `standard` (50×30 mm, default), `large` (60×40 mm). `printBarcode()` accepts a `template` param; `_buildLabel()` dispatches to `_buildSmall/Standard/Large()`. All share the same transport layer (`_sendToConnection`).
 - `lib/services/escpos_printer.dart` — ESC/POS bytes for **TVS RP 3230** (80 mm thermal receipt).
 - `lib/services/printer_connection.dart` — sealed `PrinterConnection` type: `UsbConnection(path)` or `TcpConnection(ip, port)`. Both printer services accept this and dispatch to the correct transport.
 - `lib/services/printer_discovery.dart` — auto-detection singleton (`ChangeNotifier`). Detection chain per platform:
@@ -162,12 +162,12 @@ Flutter app that serves a dual purpose: (1) it **embeds the SvelteKit PWA in a W
 
 **HTTP API (all on `localhost:8765`) — used when accessing PocketLedger from a browser instead of the WebView:**
 - `GET /status` → `{ ok: true }` — used by `print.ts` as the availability check
-- `POST /print/barcode` — body: product fields + `show_sku`, `show_price`, `shop_name`
+- `POST /print/barcode` — body: product fields + `show_sku`, `show_price`, `shop_name`, `label_template`
 - `POST /print/receipt` — body: all `BillPrintData` fields merged with `PrintSettings` fields
 
 Printer IPs are stored in the companion app's own `SharedPreferences` (configured via its settings screen), not passed in the request body.
 
-**Android background service:** `lib/services/background_service.dart` uses `flutter_background_service` to run the HTTP server in a foreground-service isolate so Android does not kill it while a browser-based user uses the PWA in Chrome. The UI isolate notifies the service isolate to reload settings via `service.invoke('reload_settings')` after a save. When using the built-in WebView, the app is in the foreground so no background service is needed for the JS channel path.
+**Android background service:** `lib/services/background_service.dart` uses `flutter_background_service` to run the HTTP server in a foreground-service isolate so Android does not kill it while a browser-based user uses the PWA in Chrome. The service is **opt-in** (default off) — controlled by a `background_service_enabled` boolean in `SharedPreferences` (via `SettingsService`). `initBackgroundService()` only configures the service (notification channel + `autoStart: false`); `main.dart` then calls `FlutterBackgroundService().startService()` conditionally. The Settings tab shows a "Keep running in background" toggle (Android only) that starts/stops the service immediately via `startService()` / `invoke('stopService')`. The service isolate listens for `reload_settings` (reload printer IPs after save) and `stopService` (call `service.stopSelf()`). When using the built-in WebView, the app is in the foreground so no background service is needed for the JS channel path.
 
 **Building:** Triggered manually via GitHub Actions (`.github/workflows/build-companion.yml`). The workflow runs `flutter create . --no-pub` to generate platform boilerplate, restores our `lib/` and `pubspec.yaml` via `git checkout`, runs `patch_manifest.py` to inject the foreground-service permissions into `AndroidManifest.xml`, then builds APK (ubuntu runner), Windows exe (windows runner), and Linux binary (ubuntu runner). Per-platform boolean inputs (`build_android`, `build_windows`, `build_linux`) let you build only the platform you need. `version` is optional — omit it to produce downloadable artifacts without creating a GitHub Release; provide it to publish a full release. The Windows job caches pub packages (`%LOCALAPPDATA%\Pub\Cache`, keyed on `pubspec.lock`) and the CMake build output (`companion_app/build/windows`, same key) to cut subsequent builds from ~10 min to ~3-4 min when only Dart code changes. The Linux binary is distributed as a `.tar.gz` of `build/linux/x64/release/bundle/`. Linux users need `wpewebkit` and `libwpe` installed (`sudo pacman -S wpewebkit libwpe` on Arch). The `linux/runner/main.cc` sets `LIBGL_ALWAYS_SOFTWARE=true` at startup to work around a WPE EGL texture compositing issue on Intel/i915 hardware.
 
@@ -205,7 +205,7 @@ npm run dev     # dev server at localhost:4321/PocketLedger
 | `stock_transfer_items` | Line items per transfer (product snapshot, quantity) |
 | `bills` | Invoice header scoped to a `shop` (RelationField → locations); payment_method includes `credit` |
 | `bill_items` | Line items per bill (price snapshot at sale time) |
-| `print_settings` | Singleton — shop info, receipt/label template toggles, and QZ Tray printer names (shop_name, shop_address, shop_phone, gst_number, receipt_footer, show_customer_info, show_tax_breakdown, barcode_show_sku, barcode_show_price, receipt_printer, label_printer). Read by all authenticated users; write by admin/manager only. |
+| `print_settings` | Singleton — shop info, receipt/label template toggles, and QZ Tray printer names (shop_name, shop_address, shop_phone, gst_number, receipt_footer, show_customer_info, show_tax_breakdown, barcode_show_sku, barcode_show_price, receipt_printer, label_printer, label_template). Read by all authenticated users; write by admin/manager only. |
 | `system_logs` | Application-level event log (INFO/WARNING/ERROR) |
 
 **Stock is keyed by `(product, location)`** — there is no DB-level unique constraint; uniqueness is enforced in handler logic. `CompleteTransfer` does a find-then-update (not blind insert) for the destination stock record, and returns a 422 if the source has insufficient quantity.

@@ -30,7 +30,7 @@ Future<void> initBackgroundService() async {
   await service.configure(
     androidConfiguration: AndroidConfiguration(
       onStart: _onStart,
-      autoStart: true,
+      autoStart: false,
       isForegroundMode: true,
       notificationChannelId: _kChannelId,
       initialNotificationTitle: 'PocketLedger Print',
@@ -39,10 +39,6 @@ Future<void> initBackgroundService() async {
     ),
     iosConfiguration: IosConfiguration(autoStart: false),
   );
-
-  if (!await service.isRunning()) {
-    await service.startService();
-  }
 }
 
 // Runs in a separate Dart isolate as an Android foreground service.
@@ -57,4 +53,6 @@ void _onStart(ServiceInstance service) async {
   service.on('reload_settings').listen((_) async {
     await SettingsService.instance.load();
   });
+
+  service.on('stopService').listen((_) => service.stopSelf());
 }

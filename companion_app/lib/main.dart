@@ -21,6 +21,9 @@ void main() async {
 
     await Permission.notification.request();
     await initBackgroundService();
+    if (SettingsService.instance.backgroundServiceEnabled) {
+      await FlutterBackgroundService().startService();
+    }
   }
 
   runApp(const CompanionApp());

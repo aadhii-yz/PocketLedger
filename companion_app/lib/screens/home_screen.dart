@@ -26,6 +26,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   bool _serverRunning = false;
   String _statusMsg = 'Starting…';
+  bool _bgServiceEnabled = false;
   Timer? _countdownTimer;
 
   @override
@@ -35,6 +36,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _urlCtrl.text = s.pocketledgerUrl;
     _receiptManualIpCtrl.text = s.receiptPrinterIp;
     _barcodeManualIpCtrl.text = s.barcodePrinterIp;
+    _bgServiceEnabled = s.backgroundServiceEnabled;
 
     PrinterDiscovery.instance.addListener(_onDiscoveryUpdate);
     PrinterDiscovery.instance.startDiscovery();
@@ -44,9 +46,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
     if (Platform.isAndroid) {
       setState(() {
-        _serverRunning = true;
-        _statusMsg =
-            'Print service active on localhost:${s.serverPort}';
+        _serverRunning = _bgServiceEnabled;
+        _statusMsg = _bgServiceEnabled
+            ? 'Print service active on localhost:${s.serverPort}'
+            : 'Background service disabled';
       });
     } else {
       _startDesktopServer();
@@ -103,6 +106,26 @@ class _HomeScreenState extends State<HomeScreen> {
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('Settings saved')));
       widget.onSaved?.call();
+    }
+  }
+
+  // ── Background service toggle ─────────────────────────────────────────────
+
+  Future<void> _toggleBackgroundService(bool enabled) async {
+    final s = SettingsService.instance;
+    s.backgroundServiceEnabled = enabled;
+    await s.save();
+    setState(() {
+      _bgServiceEnabled = enabled;
+      _serverRunning = enabled;
+      _statusMsg = enabled
+          ? 'Print service active on localhost:${s.serverPort}'
+          : 'Background service disabled';
+    });
+    if (enabled) {
+      await FlutterBackgroundService().startService();
+    } else {
+      FlutterBackgroundService().invoke('stopService');
     }
   }
 
@@ -248,6 +271,24 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             const SizedBox(height: 24),
+
+            // Background service toggle (Android only)
+            if (Platform.isAndroid) ...[
+              Card(
+                child: SwitchListTile(
+                  title: const Text('Keep running in background',
+                      style: TextStyle(fontWeight: FontWeight.w500)),
+                  subtitle: const Text(
+                    'Required for printing from a browser. '
+                    'Not needed when using the built-in app view.',
+                    style: TextStyle(fontSize: 12),
+                  ),
+                  value: _bgServiceEnabled,
+                  onChanged: _toggleBackgroundService,
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
 
             // Receipt printer
             _PrinterCard(

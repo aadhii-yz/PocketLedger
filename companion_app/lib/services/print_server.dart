@@ -65,6 +65,7 @@ class PrintServer {
 
       await TsplPrinter.printBarcode(
         connection: conn,
+        template: body['label_template'] as String? ?? 'standard',
         name: body['name'] as String? ?? '',
         barcode: body['barcode'] as String? ?? '',
         sku: body['sku'] as String? ?? '',

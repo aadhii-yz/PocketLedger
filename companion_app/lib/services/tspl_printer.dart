@@ -7,6 +7,7 @@ import 'printer_discovery.dart';
 class TsplPrinter {
   static Future<void> printBarcode({
     required PrinterConnection connection,
+    String template = 'standard',
     required String name,
     required String barcode,
     required String sku,
@@ -16,7 +17,8 @@ class TsplPrinter {
     String shopName = '',
     Map<String, String> details = const {},
   }) async {
-    final cmds = _build(
+    final cmds = _buildLabel(
+      template,
       name: name,
       barcode: barcode,
       sku: sku,
@@ -41,7 +43,40 @@ class TsplPrinter {
     await _sendToConnection(connection, cmds);
   }
 
-  static String _build({
+  static String _buildLabel(
+    String template, {
+    required String name,
+    required String barcode,
+    required String sku,
+    required double price,
+    bool showSku = true,
+    bool showPrice = true,
+    String shopName = '',
+    Map<String, String> details = const {},
+  }) {
+    switch (template) {
+      case 'small':
+        return _buildSmall(
+          name: name, barcode: barcode, sku: sku, price: price,
+          showSku: showSku, showPrice: showPrice, shopName: shopName,
+        );
+      case 'large':
+        return _buildLarge(
+          name: name, barcode: barcode, sku: sku, price: price,
+          showSku: showSku, showPrice: showPrice, shopName: shopName,
+          details: details,
+        );
+      default:
+        return _buildStandard(
+          name: name, barcode: barcode, sku: sku, price: price,
+          showSku: showSku, showPrice: showPrice, shopName: shopName,
+          details: details,
+        );
+    }
+  }
+
+  // 50 × 30 mm — default layout (current)
+  static String _buildStandard({
     required String name,
     required String barcode,
     required String sku,
@@ -78,6 +113,100 @@ class TsplPrinter {
     if (showPrice) {
       final priceStr = 'Rs.${price.toStringAsFixed(2)}';
       b.writeln('TEXT 300,$bottomY,"1",0,1,1,"$priceStr"');
+    }
+
+    var detailY = bottomY + 16;
+    for (final e in details.entries) {
+      if (e.key.trim().isEmpty) continue;
+      b.writeln('TEXT 10,$detailY,"1",0,1,1,"${e.key}: ${e.value}"');
+      detailY += 14;
+    }
+
+    b.writeln('PRINT 1,1');
+    return b.toString();
+  }
+
+  // 40 × 20 mm — compact layout for small tags and accessories
+  static String _buildSmall({
+    required String name,
+    required String barcode,
+    required String sku,
+    required double price,
+    bool showSku = true,
+    bool showPrice = true,
+    String shopName = '',
+  }) {
+    final b = StringBuffer();
+
+    b.writeln('SIZE 40 mm, 20 mm');
+    b.writeln('GAP 2 mm, 0 mm');
+    b.writeln('DIRECTION 0');
+    b.writeln('REFERENCE 0,0');
+    b.writeln('CLS');
+
+    if (shopName.isNotEmpty) {
+      final sn = shopName.length > 32 ? shopName.substring(0, 32) : shopName;
+      b.writeln('TEXT 5,2,"1",0,1,1,"$sn"');
+    }
+
+    final displayName = name.length > 36 ? '${name.substring(0, 35)}>' : name;
+    final nameY = shopName.isNotEmpty ? 13 : 2;
+    b.writeln('TEXT 5,$nameY,"1",0,1,1,"$displayName"');
+
+    final bcY = nameY + 12;
+    b.writeln('BARCODE 5,$bcY,"128",28,1,0,2,2,"$barcode"');
+
+    final bottomY = bcY + 34;
+    if (showSku && sku.isNotEmpty) {
+      b.writeln('TEXT 5,$bottomY,"1",0,1,1,"SKU: $sku"');
+    }
+    if (showPrice) {
+      final priceStr = 'Rs.${price.toStringAsFixed(2)}';
+      b.writeln('TEXT 240,$bottomY,"1",0,1,1,"$priceStr"');
+    }
+
+    b.writeln('PRINT 1,1');
+    return b.toString();
+  }
+
+  // 60 × 40 mm — spacious layout for hang tags and boxed items
+  static String _buildLarge({
+    required String name,
+    required String barcode,
+    required String sku,
+    required double price,
+    bool showSku = true,
+    bool showPrice = true,
+    String shopName = '',
+    Map<String, String> details = const {},
+  }) {
+    final b = StringBuffer();
+
+    b.writeln('SIZE 60 mm, 40 mm');
+    b.writeln('GAP 2 mm, 0 mm');
+    b.writeln('DIRECTION 0');
+    b.writeln('REFERENCE 0,0');
+    b.writeln('CLS');
+
+    if (shopName.isNotEmpty) {
+      final sn = shopName.length > 58 ? shopName.substring(0, 58) : shopName;
+      b.writeln('TEXT 10,2,"1",0,1,1,"$sn"');
+    }
+
+    final displayName = name.length > 55 ? '${name.substring(0, 54)}>' : name;
+    final nameY = shopName.isNotEmpty ? 18 : 5;
+    b.writeln('TEXT 10,$nameY,"2",0,1,1,"$displayName"');
+
+    final bcY = nameY + 22;
+    b.writeln('BARCODE 10,$bcY,"128",60,1,0,2,2,"$barcode"');
+
+    final bottomY = bcY + 76;
+    if (showSku && sku.isNotEmpty) {
+      b.writeln('TEXT 10,$bottomY,"1",0,1,1,"SKU: $sku"');
+    }
+    if (showPrice) {
+      final priceStr = 'Rs.${price.toStringAsFixed(2)}';
+      b.writeln('TEXT 380,$bottomY,"1",0,1,1,"$priceStr"');
     }
 
     var detailY = bottomY + 16;

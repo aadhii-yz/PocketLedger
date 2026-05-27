@@ -49,6 +49,7 @@
   let barcodeShowPrice = $state(true);
   let receiptPrinter = $state("");
   let labelPrinter = $state("");
+  let labelTemplate = $state("standard");
 
   let detectingPrinters = $state(false);
   let detectedPrinters = $state<string[]>([]);
@@ -81,6 +82,7 @@
         barcodeShowPrice = r["barcode_show_price"] !== false;
         receiptPrinter = r["receipt_printer"] ?? "";
         labelPrinter = r["label_printer"] ?? "";
+        labelTemplate = r["label_template"] || "standard";
       }
     } catch {
       // no existing settings — defaults are already set
@@ -104,6 +106,7 @@
       barcode_show_price: barcodeShowPrice,
       receipt_printer: receiptPrinter,
       label_printer: labelPrinter,
+      label_template: labelTemplate,
     });
     if (!parsed.success) {
       errorMsg = firstError(parsed.error);
@@ -265,6 +268,19 @@
                 />
                 <span class="text-sm font-medium">Show SKU on label</span>
               </label>
+
+              <div class="flex flex-col gap-1.5">
+                <label class="text-sm font-medium" for="label-template">Label size</label>
+                <select
+                  id="label-template"
+                  bind:value={labelTemplate}
+                  class="border rounded px-3 py-2 text-sm bg-background w-48"
+                >
+                  <option value="small">Small (40 × 20 mm)</option>
+                  <option value="standard">Standard (50 × 30 mm)</option>
+                  <option value="large">Large (60 × 40 mm)</option>
+                </select>
+              </div>
             </div>
           </Card>
 

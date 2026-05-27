@@ -15,6 +15,7 @@ class SettingsService {
   String receiptPrinterIp = '';
   int receiptPrinterPort = 9100;
   int serverPort = 8765;
+  bool backgroundServiceEnabled = false;
 
   PrinterConnection? get receiptConnection {
     if (receiptUsbPath.isNotEmpty) return UsbConnection(receiptUsbPath);
@@ -42,6 +43,7 @@ class SettingsService {
     receiptPrinterIp = p.getString('receipt_ip') ?? '';
     receiptPrinterPort = p.getInt('receipt_port') ?? 9100;
     serverPort = p.getInt('server_port') ?? 8765;
+    backgroundServiceEnabled = p.getBool('background_service_enabled') ?? false;
   }
 
   Future<void> save() async {
@@ -54,5 +56,6 @@ class SettingsService {
     await p.setString('receipt_ip', receiptPrinterIp);
     await p.setInt('receipt_port', receiptPrinterPort);
     await p.setInt('server_port', serverPort);
+    await p.setBool('background_service_enabled', backgroundServiceEnabled);
   }
 }

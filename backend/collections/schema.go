@@ -590,6 +590,10 @@ func ensurePrintSettings(app core.App) error {
 			col.Fields.Add(&core.TextField{Name: "label_printer"})
 			changed = true
 		}
+		if col.Fields.GetByName("label_template") == nil {
+			col.Fields.Add(&core.TextField{Name: "label_template"})
+			changed = true
+		}
 		if !changed {
 			return nil
 		}
@@ -614,6 +618,7 @@ func ensurePrintSettings(app core.App) error {
 	col.Fields.Add(&core.BoolField{Name: "barcode_show_price"})
 	col.Fields.Add(&core.TextField{Name: "receipt_printer"})
 	col.Fields.Add(&core.TextField{Name: "label_printer"})
+	col.Fields.Add(&core.TextField{Name: "label_template"})
 	return app.Save(col)
 }
 

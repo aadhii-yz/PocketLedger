@@ -36,6 +36,7 @@ const defaultSettings: PrintSettings = {
   barcode_show_price: true,
   receipt_printer: '',
   label_printer: '',
+  label_template: 'standard',
 };
 
 export async function loadPrintSettings(): Promise<PrintSettings> {
@@ -55,6 +56,7 @@ export async function loadPrintSettings(): Promise<PrintSettings> {
         barcode_show_price: r['barcode_show_price'] !== false,
         receipt_printer: r['receipt_printer'] ?? '',
         label_printer: r['label_printer'] ?? '',
+        label_template: r['label_template'] || 'standard',
       };
     }
   } catch {
@@ -154,6 +156,7 @@ async function _companionPrintBarcode(
         show_sku: settings.barcode_show_sku,
         show_price: settings.barcode_show_price,
         shop_name: settings.shop_name,
+        label_template: settings.label_template ?? 'standard',
       }),
       signal: AbortSignal.timeout(5000),
     });
