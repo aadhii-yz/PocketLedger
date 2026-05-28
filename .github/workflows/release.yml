@@ -4,8 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release version (e.g. v1.0.0)'
+        description: 'Release version (e.g. backend-v1.0.0)'
         required: true
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -30,6 +33,7 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: '1.26'
+          cache-dependency-path: backend/go.sum
 
       - name: Build backend
         run: |
