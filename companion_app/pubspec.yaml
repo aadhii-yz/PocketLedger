@@ -36,6 +36,7 @@ flutter:
 msix_config:
   display_name: PocketLedger Print
   publisher_display_name: PocketLedger
+  publisher: CN=PocketLedger
   identity_name: com.pocketledger.print
   sign_msix: false
   install_certificate: false
