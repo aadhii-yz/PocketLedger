@@ -3,12 +3,14 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../services/settings_service.dart';
 import '../services/print_server.dart';
 import '../services/printer_connection.dart';
 import '../services/printer_discovery.dart';
 import '../services/escpos_printer.dart';
 import '../services/tspl_printer.dart';
+import '../services/update_service.dart';
 import 'wifi_config_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -28,6 +30,10 @@ class _HomeScreenState extends State<HomeScreen> {
   String _statusMsg = 'Starting…';
   bool _bgServiceEnabled = false;
   Timer? _countdownTimer;
+
+  UpdateInfo? _updateInfo;
+  bool _updateDismissed = false;
+  double? _downloadProgress;
 
   @override
   void initState() {
@@ -54,6 +60,8 @@ class _HomeScreenState extends State<HomeScreen> {
     } else {
       _startDesktopServer();
     }
+
+    _checkForUpdate();
   }
 
   @override
@@ -91,6 +99,95 @@ class _HomeScreenState extends State<HomeScreen> {
         _statusMsg = 'Failed to start server: $e';
       });
     }
+  }
+
+  Future<void> _checkForUpdate() async {
+    final info = await UpdateService.check();
+    if (info != null && mounted) setState(() => _updateInfo = info);
+  }
+
+  Future<void> _downloadUpdate() async {
+    final info = _updateInfo;
+    if (info == null || info.apkDownloadUrl == null) return;
+    setState(() => _downloadProgress = 0.0);
+    try {
+      await UpdateService.downloadAndInstallApk(
+        info.apkDownloadUrl!,
+        (p) { if (mounted) setState(() => _downloadProgress = p); },
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Download failed: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _downloadProgress = null);
+    }
+  }
+
+  Widget? _buildUpdateBanner() {
+    final info = _updateInfo;
+    if (info == null || _updateDismissed) return null;
+
+    return Card(
+      color: Colors.blue.shade50,
+      margin: const EdgeInsets.only(bottom: 16),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.system_update, color: Colors.blue, size: 18),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Update available: v${info.version}',
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold, color: Colors.blue),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close, size: 18),
+                  visualDensity: VisualDensity.compact,
+                  color: Colors.blue,
+                  onPressed: () => setState(() => _updateDismissed = true),
+                ),
+              ],
+            ),
+            if (_downloadProgress != null) ...[
+              const SizedBox(height: 8),
+              LinearProgressIndicator(value: _downloadProgress),
+              const SizedBox(height: 4),
+              Text(
+                '${(_downloadProgress! * 100).toStringAsFixed(0)}%',
+                style: const TextStyle(fontSize: 12, color: Colors.blue),
+              ),
+            ] else ...[
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: Platform.isAndroid && info.apkDownloadUrl != null
+                      ? _downloadUpdate
+                      : () => launchUrl(
+                            Uri.parse(info.releasePageUrl),
+                            mode: LaunchMode.externalApplication,
+                          ),
+                  icon: const Icon(Icons.download, size: 16),
+                  label: Text(
+                    Platform.isAndroid && info.apkDownloadUrl != null
+                        ? 'Download & Install'
+                        : 'Open Release Page',
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _saveUrl() async {
@@ -227,6 +324,9 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Update banner (shown when a newer release is available)
+            if (_buildUpdateBanner() case final banner?) banner,
+
             // Server status
             Card(
               color: _serverRunning

@@ -121,6 +121,14 @@ jobs:
             Write-Host "Bundled $dll"
           }
 
+      - name: Build MSIX package
+        working-directory: companion_app
+        shell: pwsh
+        run: |
+          $raw = "${{ github.event.inputs.version }}".TrimStart('v')
+          $msixVer = if ($raw) { "$raw.0" } else { "0.0.0.0" }
+          dart run msix:create --version $msixVer
+
       - name: Zip Windows build
         shell: pwsh
         run: |
@@ -132,6 +140,11 @@ jobs:
         with:
           name: pocketledger-print-windows
           path: pocketledger-print-windows.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pocketledger-print-windows-msix
+          path: companion_app/pocketledger_print.msix
 
   # ── Linux binary ─────────────────────────────────────────────────────────────
   build-linux:
@@ -205,6 +218,12 @@ jobs:
           path: dist/
 
       - uses: actions/download-artifact@v4
+        if: ${{ inputs.build_windows }}
+        with:
+          name: pocketledger-print-windows-msix
+          path: dist/
+
+      - uses: actions/download-artifact@v4
         if: ${{ inputs.build_linux }}
         with:
           name: pocketledger-print-linux
@@ -217,6 +236,10 @@ jobs:
       - name: Rename Windows zip
         if: ${{ inputs.build_windows }}
         run: mv dist/pocketledger-print-windows.zip dist/pocketledger-print-${{ github.event.inputs.version }}-windows.zip
+
+      - name: Rename Windows MSIX
+        if: ${{ inputs.build_windows }}
+        run: mv dist/pocketledger_print.msix dist/pocketledger-print-${{ github.event.inputs.version }}-windows.msix
 
       - name: Rename Linux archive
         if: ${{ inputs.build_linux }}

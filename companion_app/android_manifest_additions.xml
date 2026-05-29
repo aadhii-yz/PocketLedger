@@ -2,6 +2,8 @@
   Add these lines to companion_app/android/app/src/main/AndroidManifest.xml
   AFTER flutter create generates the file.
 
+  All of this is applied automatically by patch_manifest.py.
+
   1. Inside <manifest> (before <application>):
 -->
 <uses-permission android:name="android.permission.INTERNET"/>
@@ -13,6 +15,8 @@
 <uses-permission android:name="android.permission.CHANGE_WIFI_STATE"/>
 <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
 <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+<!-- open_filex: prompt APK install for in-app updates -->
+<uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
 
 <!--
   2. Inside <application> (anywhere inside it):
@@ -21,3 +25,25 @@
     android:name="id.flutter.flutter_background_service.BackgroundService"
     android:foregroundServiceType="dataSync"
     android:exported="false"/>
+
+<!-- open_filex FileProvider: shares downloaded APK URI on Android 7+ -->
+<provider
+    android:name="androidx.core.content.FileProvider"
+    android:authorities="${applicationId}.open_filex.provider"
+    android:exported="false"
+    android:grantUriPermissions="true">
+    <meta-data
+        android:name="android.support.FILE_PROVIDER_PATHS"
+        android:resource="@xml/open_filex_provider_paths"/>
+</provider>
+
+<!--
+  3. Create android/app/src/main/res/xml/open_filex_provider_paths.xml:
+-->
+<!--
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <external-path name="external_files" path="."/>
+    <cache-path name="cache_files" path="."/>
+</paths>
+-->

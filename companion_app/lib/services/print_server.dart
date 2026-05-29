@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shelf/shelf.dart';
 import 'package:shelf/shelf_io.dart' as shelf_io;
 import 'package:shelf_router/shelf_router.dart';
@@ -49,8 +50,10 @@ class PrintServer {
 
   // ── Handlers ────────────────────────────────────────────────────────────────
 
-  static Response _status(Request _) =>
-      Response.ok(jsonEncode({'ok': true, 'version': '1.0.0'}));
+  static Future<Response> _status(Request _) async {
+    final info = await PackageInfo.fromPlatform();
+    return Response.ok(jsonEncode({'ok': true, 'version': info.version}));
+  }
 
   static Future<Response> _printBarcode(Request req) async {
     try {
