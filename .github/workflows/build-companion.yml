@@ -218,6 +218,7 @@ jobs:
           path: dist/
 
       - uses: actions/download-artifact@v4
+        continue-on-error: true
         if: ${{ inputs.build_windows }}
         with:
           name: pocketledger-print-windows-msix
@@ -239,7 +240,13 @@ jobs:
 
       - name: Rename Windows MSIX
         if: ${{ inputs.build_windows }}
-        run: mv dist/pocketledger_print.msix dist/pocketledger-print-${{ github.event.inputs.version }}-windows.msix
+        run: |
+          if [ -f dist/pocketledger_print.msix ]; then
+            mv dist/pocketledger_print.msix dist/pocketledger-print-${{ github.event.inputs.version }}-windows.msix
+            echo "MSIX renamed successfully"
+          else
+            echo "MSIX artifact not found, skipping"
+          fi
 
       - name: Rename Linux archive
         if: ${{ inputs.build_linux }}
